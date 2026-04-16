@@ -1,1 +1,13 @@
-__pycache__/\n*.pyc\n*.pyo\n*.pyd\n.pytest_cache/\n*.egg-info/\ndist/\nbuild/\n.venv/\nvenv/\n*.db\n*.bak\nuv.lock
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.db
+*.bak
+uv.lock
