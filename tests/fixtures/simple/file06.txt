@@ -1,0 +1,4 @@
+This is file06 content line 1.
+Second line of file06.
+Third line with number: 06.
+End of file06.
