@@ -1,4 +1,5 @@
 """fs_archive implementation — zip/tar.gz create, extract, list."""
+
 import tarfile
 import zipfile
 from pathlib import Path
@@ -26,11 +27,9 @@ def run_fs_archive(
     try:
         return _fs_archive(action, path, target, format_, dry_run)
     except ValueError as e:
-        return _error("fs_archive", str(e),
-                      "Ensure all paths are within your home directory.")
+        return _error("fs_archive", str(e), "Ensure all paths are within your home directory.")
     except Exception as e:
-        return _error("fs_archive", str(e),
-                      "Check archive path, target, and format then retry.")
+        return _error("fs_archive", str(e), "Check archive path, target, and format then retry.")
 
 
 # ---------------------------------------------------------------------------
@@ -38,15 +37,13 @@ def run_fs_archive(
 # ---------------------------------------------------------------------------
 
 
-def _fs_archive(
-    action: str, path: str, target: str, format_: str, dry_run: bool
-) -> dict:
+def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool) -> dict:
     if action not in ("create", "extract", "list"):
-        return _error("fs_archive", f"Unknown action '{action}'",
-                      "Use one of: create, extract, list.")
+        return _error(
+            "fs_archive", f"Unknown action '{action}'", "Use one of: create, extract, list."
+        )
     if format_ not in ("zip", "tar.gz"):
-        return _error("fs_archive", f"Unknown format '{format_}'",
-                      "Use 'zip' or 'tar.gz'.")
+        return _error("fs_archive", f"Unknown format '{format_}'", "Use 'zip' or 'tar.gz'.")
 
     if action == "create":
         return _action_create(path, target, format_, dry_run)
@@ -61,12 +58,13 @@ def _fs_archive(
 # ---------------------------------------------------------------------------
 
 
-def _action_create(
-    archive_path: str, source: str, format_: str, dry_run: bool
-) -> dict:
+def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) -> dict:
     if not source:
-        return _error("fs_archive", "target (source) required for action=create",
-                      "Provide the file or directory to archive in 'target'.")
+        return _error(
+            "fs_archive",
+            "target (source) required for action=create",
+            "Provide the file or directory to archive in 'target'.",
+        )
 
     arc = resolve_path(archive_path)
     src = resolve_path(source, must_exist=True)
@@ -128,9 +126,7 @@ def _action_create(
 
 def _action_extract(archive_path: str, target: str, dry_run: bool) -> dict:
     arc = resolve_path(archive_path, must_exist=True)
-    out_dir = resolve_path(
-        target or str(get_default_output_dir(archive_path))
-    )
+    out_dir = resolve_path(target or str(get_default_output_dir(archive_path)))
     progress = []
 
     # Detect format from extension
@@ -139,20 +135,23 @@ def _action_extract(archive_path: str, target: str, dry_run: bool) -> dict:
         return _extract_zip(arc, out_dir, dry_run, progress)
     if name_lower.endswith((".tar.gz", ".tgz")):
         return _extract_targz(arc, out_dir, dry_run, progress)
-    return _error("fs_archive",
-                  f"Cannot detect archive format from filename '{arc.name}'",
-                  "Rename the archive to end in .zip, .tar.gz, or .tgz.")
+    return _error(
+        "fs_archive",
+        f"Cannot detect archive format from filename '{arc.name}'",
+        "Rename the archive to end in .zip, .tar.gz, or .tgz.",
+    )
 
 
-def _extract_zip(
-    arc: Path, out_dir: Path, dry_run: bool, progress: list
-) -> dict:
+def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dict:
     try:
         with zipfile.ZipFile(arc, "r") as zf:
             names = zf.namelist()
     except zipfile.BadZipFile:
-        return _error("fs_archive", f"Not a valid zip file: {arc.name}",
-                      "Verify the archive is not corrupted.")
+        return _error(
+            "fs_archive",
+            f"Not a valid zip file: {arc.name}",
+            "Verify the archive is not corrupted.",
+        )
 
     # Check for conflicts
     conflicts = [n for n in names if (out_dir / n).exists()]
@@ -198,15 +197,14 @@ def _extract_zip(
     return result
 
 
-def _extract_targz(
-    arc: Path, out_dir: Path, dry_run: bool, progress: list
-) -> dict:
+def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dict:
     try:
         with tarfile.open(arc, "r:gz") as tf:
             members = tf.getnames()
     except tarfile.TarError as e:
-        return _error("fs_archive", f"Not a valid tar.gz: {e}",
-                      "Verify the archive is not corrupted.")
+        return _error(
+            "fs_archive", f"Not a valid tar.gz: {e}", "Verify the archive is not corrupted."
+        )
 
     conflicts = [m for m in members if (out_dir / m).exists()]
     if conflicts:
@@ -268,8 +266,9 @@ def _action_list(archive_path: str) -> dict:
                     for info_obj in zf.infolist()
                 ]
         except zipfile.BadZipFile:
-            return _error("fs_archive", f"Not a valid zip: {arc.name}",
-                          "Verify the archive is not corrupted.")
+            return _error(
+                "fs_archive", f"Not a valid zip: {arc.name}", "Verify the archive is not corrupted."
+            )
     elif name_lower.endswith((".tar.gz", ".tgz")):
         try:
             with tarfile.open(arc, "r:gz") as tf:
@@ -282,12 +281,15 @@ def _action_list(archive_path: str) -> dict:
                     for m in tf.getmembers()
                 ]
         except tarfile.TarError as e:
-            return _error("fs_archive", f"Not a valid tar.gz: {e}",
-                          "Verify the archive is not corrupted.")
+            return _error(
+                "fs_archive", f"Not a valid tar.gz: {e}", "Verify the archive is not corrupted."
+            )
     else:
-        return _error("fs_archive",
-                      f"Cannot detect archive format: {arc.name}",
-                      "Rename to end in .zip, .tar.gz, or .tgz.")
+        return _error(
+            "fs_archive",
+            f"Cannot detect archive format: {arc.name}",
+            "Rename to end in .zip, .tar.gz, or .tgz.",
+        )
 
     result: dict = {
         "success": True,

@@ -4,6 +4,7 @@ Receipt files are stored alongside the target file as
 {filename}.mcp_receipt.json  (sibling, not hidden).
 All functions silently drop errors — receipts are best-effort.
 """
+
 import json
 from datetime import UTC, datetime
 from pathlib import Path

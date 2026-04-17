@@ -3,6 +3,7 @@
 Usage:  python verify_tool_docstrings.py
 Exit 0 on success, 1 on failure.
 """
+
 import ast
 import sys
 from pathlib import Path
@@ -22,8 +23,11 @@ def _check_file(path: Path) -> list[str]:
             continue
         # Check if decorated with @mcp.tool(...)
         is_tool = any(
-            (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
-             and d.func.attr == "tool")
+            (
+                isinstance(d, ast.Call)
+                and isinstance(d.func, ast.Attribute)
+                and d.func.attr == "tool"
+            )
             or (isinstance(d, ast.Attribute) and d.attr == "tool")
             for d in node.decorator_list
         )
@@ -31,9 +35,7 @@ def _check_file(path: Path) -> list[str]:
             continue
         docstring = ast.get_docstring(node)
         if not docstring:
-            violations.append(
-                f"{path}:{node.lineno}: tool '{node.name}' has no docstring"
-            )
+            violations.append(f"{path}:{node.lineno}: tool '{node.name}' has no docstring")
             continue
         first_line = docstring.splitlines()[0]
         if len(first_line) > 80:
@@ -46,7 +48,7 @@ def _check_file(path: Path) -> list[str]:
 
 
 def main() -> int:
-    root = Path(__file__).parent
+    root = Path(__file__).parent.parent
     server_files = list(root.glob("servers/**/server.py"))
     if not server_files:
         print("No server.py files found.", file=sys.stderr)

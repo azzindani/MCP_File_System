@@ -1,4 +1,5 @@
 """fs_read implementation — INSPECT files, trees, metadata, diffs."""
+
 import difflib
 import mimetypes
 import stat as stat_mod
@@ -22,6 +23,7 @@ _BINARY_CHUNK = 8192
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def run_fs_read(
     path: str,
     mode: str = "auto",
@@ -34,22 +36,29 @@ def run_fs_read(
     try:
         return _fs_read(path, mode, start_line, end_line, depth, compare_to, changed_since)
     except ValueError as e:
-        return _error("fs_read", str(e),
-                      "Ensure path is absolute and within your home directory.")
+        return _error("fs_read", str(e), "Ensure path is absolute and within your home directory.")
     except FileNotFoundError:
-        return _error("fs_read", f"Path does not exist: {Path(path).name}",
-                      "Use fs_query to locate the file first.")
+        return _error(
+            "fs_read",
+            f"Path does not exist: {Path(path).name}",
+            "Use fs_query to locate the file first.",
+        )
     except PermissionError:
-        return _error("fs_read", f"Permission denied: {Path(path).name}",
-                      "Check permissions or choose a path you own.")
+        return _error(
+            "fs_read",
+            f"Permission denied: {Path(path).name}",
+            "Check permissions or choose a path you own.",
+        )
     except Exception as e:
-        return _error("fs_read", str(e),
-                      "Use fs_read with a specific mode to narrow the operation.")
+        return _error(
+            "fs_read", str(e), "Use fs_read with a specific mode to narrow the operation."
+        )
 
 
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 def _fs_read(
     path: str,
@@ -67,8 +76,9 @@ def _fs_read(
         mode = "content" if resolved.is_file() else "tree"
 
     if mode not in ("content", "tree", "meta", "diff"):
-        return _error("fs_read", f"Unknown mode '{mode}'",
-                      "Use one of: content, tree, meta, diff, auto.")
+        return _error(
+            "fs_read", f"Unknown mode '{mode}'", "Use one of: content, tree, meta, diff, auto."
+        )
 
     if mode == "content":
         return _read_content(resolved, start_line, end_line)
@@ -84,6 +94,7 @@ def _fs_read(
 # content mode
 # ---------------------------------------------------------------------------
 
+
 def _is_binary(path: Path) -> bool:
     try:
         chunk = path.read_bytes()[:_BINARY_CHUNK]
@@ -94,8 +105,7 @@ def _is_binary(path: Path) -> bool:
 
 def _read_content(path: Path, start_line: int, end_line: int) -> dict:
     if not path.is_file():
-        return _error("fs_read", f"Not a file: {path.name}",
-                      "Use mode=tree for directories.")
+        return _error("fs_read", f"Not a file: {path.name}", "Use mode=tree for directories.")
 
     if _is_binary(path):
         hex_preview = path.read_bytes()[:32].hex()
@@ -119,8 +129,7 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
-        return _error("fs_read", f"Cannot read file: {e}",
-                      "Check file encoding or permissions.")
+        return _error("fs_read", f"Cannot read file: {e}", "Check file encoding or permissions.")
     all_lines = text.splitlines(keepends=True)
     total_lines = len(all_lines)
 
@@ -155,10 +164,12 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
 # tree mode
 # ---------------------------------------------------------------------------
 
+
 def _read_tree(path: Path, depth: int) -> dict:
     if not path.is_dir():
-        return _error("fs_read", f"Not a directory: {path.name}",
-                      "Use mode=content to read a file.")
+        return _error(
+            "fs_read", f"Not a directory: {path.name}", "Use mode=content to read a file."
+        )
 
     max_depth = max(1, min(depth, get_max_depth()))
     max_entries = get_max_tree_entries()
@@ -222,6 +233,7 @@ def _collect_tree(
 # meta mode
 # ---------------------------------------------------------------------------
 
+
 def _read_meta(path: Path, changed_since: str) -> dict:
     try:
         lstat = path.lstat()
@@ -269,10 +281,14 @@ def _read_meta(path: Path, changed_since: str) -> dict:
 # diff mode
 # ---------------------------------------------------------------------------
 
+
 def _read_diff(path: Path, compare_to: str) -> dict:
     if not compare_to:
-        return _error("fs_read", "diff mode requires 'compare_to' parameter",
-                      "Provide a file path or snapshot timestamp in compare_to.")
+        return _error(
+            "fs_read",
+            "diff mode requires 'compare_to' parameter",
+            "Provide a file path or snapshot timestamp in compare_to.",
+        )
 
     # Resolve compare_to: could be a file path or a snapshot timestamp
     cmp_path: Path | None = None
@@ -300,12 +316,16 @@ def _read_diff(path: Path, compare_to: str) -> dict:
         a_lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
         b_lines = cmp_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
     except Exception as e:
-        return _error("fs_read", f"Cannot read files for diff: {e}",
-                      "Ensure both files are readable text files.")
+        return _error(
+            "fs_read",
+            f"Cannot read files for diff: {e}",
+            "Ensure both files are readable text files.",
+        )
 
     diff = list(
         difflib.unified_diff(
-            b_lines, a_lines,
+            b_lines,
+            a_lines,
             fromfile=str(cmp_path.name),
             tofile=str(path.name),
         )

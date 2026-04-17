@@ -1,4 +1,5 @@
 """Core path utilities: resolve, atomic write, default output dir."""
+
 import shutil
 import sys
 import tempfile

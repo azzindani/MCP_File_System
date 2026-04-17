@@ -42,7 +42,7 @@ jobs:
         continue-on-error: true
 
       - name: Verify tool docstrings (≤80 chars)
-        run: uv run python verify_tool_docstrings.py
+        run: uv run python tests/verify_tool_docstrings.py
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short

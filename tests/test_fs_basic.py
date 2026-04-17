@@ -1,4 +1,5 @@
 """Comprehensive tests for fs_basic engine — all 6 tools, all modes."""
+
 import sys
 from pathlib import Path
 
@@ -37,9 +38,7 @@ class TestFsQuery:
             assert Path(m).is_dir()
 
     def test_grep_mode_returns_line_hits(self, simple_dir):
-        r = engine.fs_query(
-            "*.txt", path=str(simple_dir), content="line 1", grep_mode=True
-        )
+        r = engine.fs_query("*.txt", path=str(simple_dir), content="line 1", grep_mode=True)
         assert r["success"] is True
         assert r["grep_mode"] is True
         assert len(r["matches"]) > 0
@@ -50,8 +49,11 @@ class TestFsQuery:
 
     def test_grep_mode_context_lines(self, simple_dir):
         r = engine.fs_query(
-            "*.txt", path=str(simple_dir),
-            content="Second line", grep_mode=True, context_lines=1,
+            "*.txt",
+            path=str(simple_dir),
+            content="Second line",
+            grep_mode=True,
+            context_lines=1,
         )
         assert r["success"] is True
         assert len(r["matches"]) > 0
@@ -167,16 +169,12 @@ class TestFsRead:
         assert "is_symlink" in r
 
     def test_meta_mode_changed_since_true(self, sample_file):
-        r = engine.fs_read(
-            str(sample_file), mode="meta", changed_since="2000-01-01T00:00:00Z"
-        )
+        r = engine.fs_read(str(sample_file), mode="meta", changed_since="2000-01-01T00:00:00Z")
         assert r["success"] is True
         assert r["changed"] is True
 
     def test_meta_mode_changed_since_false(self, sample_file):
-        r = engine.fs_read(
-            str(sample_file), mode="meta", changed_since="2099-01-01T00:00:00Z"
-        )
+        r = engine.fs_read(str(sample_file), mode="meta", changed_since="2099-01-01T00:00:00Z")
         assert r["success"] is True
         assert r["changed"] is False
 
@@ -257,7 +255,9 @@ class TestFsWriteBasicOps:
 
     def test_append_file_content_appended(self, sample_file):
         original = sample_file.read_text()
-        r = engine.fs_write([{"op": "append_file", "path": str(sample_file), "content": "appended\n"}])
+        r = engine.fs_write(
+            [{"op": "append_file", "path": str(sample_file), "content": "appended\n"}]
+        )
         assert r["success"] is True
         assert sample_file.read_text() == original + "appended\n"
 
@@ -305,7 +305,9 @@ class TestFsWriteBasicOps:
     def test_replace_text_occurrences(self, work_dir):
         p = work_dir / "rep.txt"
         p.write_text("foo bar foo baz foo\n")
-        r = engine.fs_write([{"op": "replace_text", "path": str(p), "find": "foo", "replace": "qux"}])
+        r = engine.fs_write(
+            [{"op": "replace_text", "path": str(p), "find": "foo", "replace": "qux"}]
+        )
         assert r["success"] is True
         assert "qux" in p.read_text()
         assert "foo" not in p.read_text()
@@ -314,16 +316,25 @@ class TestFsWriteBasicOps:
     def test_replace_text_snapshot_created(self, work_dir, tmp_home):
         p = work_dir / "snap.txt"
         p.write_text("original\n")
-        r = engine.fs_write([{"op": "replace_text", "path": str(p), "find": "original", "replace": "changed"}])
+        r = engine.fs_write(
+            [{"op": "replace_text", "path": str(p), "find": "original", "replace": "changed"}]
+        )
         assert r["success"] is True
         assert r["results"][0]["backup"] is not None
 
     def test_insert_after_pattern(self, work_dir):
         p = work_dir / "ins.txt"
         p.write_text("line1\ninsert_here\nline3\n")
-        r = engine.fs_write([
-            {"op": "insert_after", "path": str(p), "after_pattern": "insert_here", "content": "NEW LINE"}
-        ])
+        r = engine.fs_write(
+            [
+                {
+                    "op": "insert_after",
+                    "path": str(p),
+                    "after_pattern": "insert_here",
+                    "content": "NEW LINE",
+                }
+            ]
+        )
         assert r["success"] is True
         lines = p.read_text().splitlines()
         assert lines[2] == "NEW LINE"
@@ -331,7 +342,9 @@ class TestFsWriteBasicOps:
     def test_delete_lines_removes_range(self, work_dir):
         p = work_dir / "del_lines.txt"
         p.write_text("a\nb\nc\nd\ne\n")
-        r = engine.fs_write([{"op": "delete_lines", "path": str(p), "start_line": 1, "end_line": 3}])
+        r = engine.fs_write(
+            [{"op": "delete_lines", "path": str(p), "start_line": 1, "end_line": 3}]
+        )
         assert r["success"] is True
         remaining = p.read_text().splitlines()
         assert remaining == ["a", "d", "e"]
@@ -339,9 +352,17 @@ class TestFsWriteBasicOps:
     def test_patch_lines_replaces_range(self, work_dir):
         p = work_dir / "patch.txt"
         p.write_text("a\nb\nc\nd\n")
-        r = engine.fs_write([
-            {"op": "patch_lines", "path": str(p), "start_line": 1, "end_line": 3, "content": "X\nY\n"}
-        ])
+        r = engine.fs_write(
+            [
+                {
+                    "op": "patch_lines",
+                    "path": str(p),
+                    "start_line": 1,
+                    "end_line": 3,
+                    "content": "X\nY\n",
+                }
+            ]
+        )
         assert r["success"] is True
         assert p.read_text().splitlines() == ["a", "X", "Y", "d"]
 
@@ -369,10 +390,12 @@ class TestFsWriteBasicOps:
 
     def test_partial_invalid_batch_nothing_applied(self, work_dir):
         good = work_dir / "good.txt"
-        r = engine.fs_write([
-            {"op": "write_file", "path": str(good), "content": "good"},
-            {"op": "unknown_op", "path": str(good)},
-        ])
+        r = engine.fs_write(
+            [
+                {"op": "write_file", "path": str(good), "content": "good"},
+                {"op": "unknown_op", "path": str(good)},
+            ]
+        )
         # Validation fails before any op runs
         assert r["success"] is False
         assert not good.exists()
@@ -425,6 +448,7 @@ class TestFsWriteDeletion:
 
     def test_delete_confirm_expired_token_error(self, work_dir, monkeypatch):
         import shared.confirm_store as cs
+
         p = work_dir / "exp.txt"
         p.write_text("x")
         r1 = engine.fs_write([{"op": "delete_request", "path": str(p)}])
@@ -476,10 +500,12 @@ class TestFsWriteDeletion:
         p2 = work_dir / "bulk2.txt"
         p1.write_text("1")
         p2.write_text("2")
-        r = engine.fs_write([
-            {"op": "delete_request", "path": str(p1)},
-            {"op": "delete_request", "path": str(p2)},
-        ])
+        r = engine.fs_write(
+            [
+                {"op": "delete_request", "path": str(p1)},
+                {"op": "delete_request", "path": str(p2)},
+            ]
+        )
         assert r["success"] is True
         assert r["pending"] is True
         assert len(r["targets"]) == 2
@@ -576,9 +602,7 @@ class TestFsManage:
 
     def test_versions_returns_list(self, sample_file, tmp_home):
         # Create a snapshot by writing
-        engine.fs_write([
-            {"op": "write_file", "path": str(sample_file), "content": "v2\n"}
-        ])
+        engine.fs_write([{"op": "write_file", "path": str(sample_file), "content": "v2\n"}])
         r = engine.fs_manage(action="versions", path=str(sample_file))
         assert r["success"] is True
         assert isinstance(r["versions"], list)
@@ -605,9 +629,7 @@ class TestFsArchive:
         src.mkdir()
         (src / "b.txt").write_text("world")
         arc = work_dir / "archive.tar.gz"
-        r = engine.fs_archive(
-            action="create", path=str(arc), target=str(src), format_="tar.gz"
-        )
+        r = engine.fs_archive(action="create", path=str(arc), target=str(src), format_="tar.gz")
         assert r["success"] is True
         assert arc.exists()
 
@@ -661,9 +683,7 @@ class TestFsArchive:
         src.mkdir()
         (src / "e.txt").write_text("dry")
         arc = work_dir / "dry.zip"
-        r = engine.fs_archive(
-            action="create", path=str(arc), target=str(src), dry_run=True
-        )
+        r = engine.fs_archive(action="create", path=str(arc), target=str(src), dry_run=True)
         assert r["success"] is True
         assert r.get("dry_run") is True
         assert not arc.exists()
@@ -706,9 +726,7 @@ class TestReturnValueContract:
         )
 
     def test_fs_write_error_contract(self):
-        self._check_required(
-            engine.fs_write([{"op": "bad_op", "path": "/tmp/x"}])
-        )
+        self._check_required(engine.fs_write([{"op": "bad_op", "path": "/tmp/x"}]))
 
     def test_fs_index_contract(self, work_dir, tmp_home):
         self._check_required(engine.fs_index(action="stats"))
@@ -720,6 +738,4 @@ class TestReturnValueContract:
         arc = work_dir / "contract.zip"
         src = work_dir / "ctr_src.txt"
         src.write_text("x")
-        self._check_required(
-            engine.fs_archive(action="create", path=str(arc), target=str(src))
-        )
+        self._check_required(engine.fs_archive(action="create", path=str(arc), target=str(src)))

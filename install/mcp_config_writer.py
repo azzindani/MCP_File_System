@@ -2,6 +2,7 @@
 
 Run from the repo root: uv run python install/mcp_config_writer.py
 """
+
 import json
 import os
 import sys
@@ -25,7 +26,7 @@ def _posix_entry(constrained: bool = False) -> dict:
                 'if [ ! -d "$d/.git" ]; then rm -rf "$d"; '
                 'git clone https://github.com/azzindani/mcp_file_system.git "$d" --quiet; '
                 'else cd "$d" && git fetch origin --quiet '
-                '&& git reset --hard FETCH_HEAD --quiet; fi; '
+                "&& git reset --hard FETCH_HEAD --quiet; fi; "
                 'cd "$d/servers/fs_basic"; uv sync --quiet; uv run python server.py'
             ),
         ],
@@ -62,6 +63,7 @@ def _windows_entry(constrained: bool = False) -> dict:
 # Config file locations
 # ---------------------------------------------------------------------------
 
+
 def _lm_studio_config_path() -> Path | None:
     platform = sys.platform
     if platform == "win32":
@@ -78,13 +80,20 @@ def _claude_desktop_config_path() -> Path | None:
         base = Path(os.environ.get("APPDATA", "~")).expanduser()
         return base / "Claude" / "claude_desktop_config.json"
     if platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
     return Path.home() / ".config" / "claude" / "claude_desktop_config.json"
 
 
 # ---------------------------------------------------------------------------
 # Writer
 # ---------------------------------------------------------------------------
+
 
 def _write_config(config_path: Path, server_entry: dict, label: str) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)

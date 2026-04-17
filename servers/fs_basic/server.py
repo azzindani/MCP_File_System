@@ -1,4 +1,5 @@
 """FastMCP server — 6 thin tool wrappers. All logic lives in engine.py."""
+
 import logging
 import sys
 from pathlib import Path
@@ -14,17 +15,18 @@ logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 import engine  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.types import ToolAnnotations  # noqa: E402
 
 mcp = FastMCP("fs_basic")
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 )
 def fs_query(
     pattern: str,
@@ -52,12 +54,12 @@ def fs_query(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 )
 def fs_read(
     path: str,
@@ -81,12 +83,12 @@ def fs_read(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 )
 def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
     """Write, edit, move, copy files. Delete requires confirmation token."""
@@ -94,12 +96,12 @@ def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 )
 def fs_index(
     action: str = "query",
@@ -117,12 +119,12 @@ def fs_index(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 )
 def fs_manage(action: str, path: str = "") -> dict:
     """Disk usage, permissions, symlink info, or snapshot version list."""
@@ -130,12 +132,12 @@ def fs_manage(action: str, path: str = "") -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 )
 def fs_archive(
     action: str,
