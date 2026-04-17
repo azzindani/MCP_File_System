@@ -3,6 +3,7 @@
 This module also ensures the project root is in sys.path so that
 'shared.*' imports work regardless of working directory.
 """
+
 import logging
 import sys
 from pathlib import Path

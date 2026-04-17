@@ -1,4 +1,5 @@
 """fs_index implementation — VERIFY via SQLite FTS5 index and receipts."""
+
 import sqlite3
 import time
 from datetime import UTC, datetime
@@ -40,11 +41,9 @@ def run_fs_index(
     try:
         return _fs_index(action, path, pattern, max_results)
     except ValueError as e:
-        return _error("fs_index", str(e),
-                      "Ensure path is within your home directory.")
+        return _error("fs_index", str(e), "Ensure path is within your home directory.")
     except Exception as e:
-        return _error("fs_index", str(e),
-                      "Use fs_index with action=stats to check index health.")
+        return _error("fs_index", str(e), "Use fs_index with action=stats to check index health.")
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +53,11 @@ def run_fs_index(
 
 def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
     if action not in ("build", "query", "stats", "clear", "receipt"):
-        return _error("fs_index", f"Unknown action '{action}'",
-                      "Use one of: build, query, stats, clear, receipt.")
+        return _error(
+            "fs_index",
+            f"Unknown action '{action}'",
+            "Use one of: build, query, stats, clear, receipt.",
+        )
 
     if action == "receipt":
         return _action_receipt(path)
@@ -104,8 +106,11 @@ def _get_conn() -> sqlite3.Connection:
 def _action_build(path: str) -> dict:
     root = resolve_path(path or str(Path.home()), must_exist=True)
     if not root.is_dir():
-        return _error("fs_index", f"Not a directory: {root.name}",
-                      "Provide a directory path to build an index.")
+        return _error(
+            "fs_index",
+            f"Not a directory: {root.name}",
+            "Provide a directory path to build an index.",
+        )
 
     progress = []
     conn = _get_conn()
@@ -160,14 +165,20 @@ def _action_build(path: str) -> dict:
 
 def _action_query(pattern: str, path: str, max_results: int) -> dict:
     if not pattern:
-        return _error("fs_index", "pattern must not be empty for action=query",
-                      "Provide a filename pattern like '*.py'.")
+        return _error(
+            "fs_index",
+            "pattern must not be empty for action=query",
+            "Provide a filename pattern like '*.py'.",
+        )
 
     effective_max = min(max_results, get_max_results())
 
     if not _db_path().exists():
-        return _error("fs_index", "Index not built yet",
-                      "Run fs_index with action=build to create the index first.")
+        return _error(
+            "fs_index",
+            "Index not built yet",
+            "Run fs_index with action=build to create the index first.",
+        )
 
     root_filter = ""
     if path:
@@ -212,15 +223,13 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
             age_hours = (datetime.now(UTC) - last_built).total_seconds() / 3600
             if age_hours > 24:
                 index_age_warning = (
-                    f"Index is {age_hours:.0f}h old. "
-                    "Run fs_index with action=build to refresh."
+                    f"Index is {age_hours:.0f}h old. Run fs_index with action=build to refresh."
                 )
         except Exception:
             pass
 
     match_list = [
-        {"path": r[0], "name": r[1], "size": r[2], "mtime": r[3], "type": r[4]}
-        for r in matches
+        {"path": r[0], "name": r[1], "size": r[2], "mtime": r[3], "type": r[4]} for r in matches
     ]
 
     progress.append(ok(f"Query matched {len(match_list)} result(s)"))
@@ -239,8 +248,7 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         result["index_age_warning"] = index_age_warning
     if truncated:
         result["hint"] = (
-            f"Results capped at {effective_max}. "
-            "Use a narrower pattern or increase max_results."
+            f"Results capped at {effective_max}. Use a narrower pattern or increase max_results."
         )
     result["token_estimate"] = len(str(result)) // 4
     return result
@@ -261,12 +269,8 @@ def _action_stats() -> dict:
 
     conn = _get_conn()
     try:
-        count_row = conn.execute(
-            f"SELECT COUNT(*) FROM {_FILES_TABLE}"
-        ).fetchone()
-        meta_rows = conn.execute(
-            f"SELECT key, value FROM {_META_TABLE}"
-        ).fetchall()
+        count_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
+        meta_rows = conn.execute(f"SELECT key, value FROM {_META_TABLE}").fetchall()
     finally:
         conn.close()
 
@@ -292,8 +296,11 @@ def _action_stats() -> dict:
 
 def _action_clear(path: str) -> dict:
     if not path:
-        return _error("fs_index", "path required for action=clear",
-                      "Provide the directory whose index entries should be removed.")
+        return _error(
+            "fs_index",
+            "path required for action=clear",
+            "Provide the directory whose index entries should be removed.",
+        )
 
     root = resolve_path(path)
 
@@ -334,8 +341,11 @@ def _action_clear(path: str) -> dict:
 
 def _action_receipt(path: str) -> dict:
     if not path:
-        return _error("fs_index", "path required for action=receipt",
-                      "Provide the file path whose receipt history you want.")
+        return _error(
+            "fs_index",
+            "path required for action=receipt",
+            "Provide the file path whose receipt history you want.",
+        )
 
     file_path = resolve_path(path)
     history = read_receipt_log(str(file_path))
@@ -350,8 +360,6 @@ def _action_receipt(path: str) -> dict:
         "progress": [ok(f"Receipt for {file_path.name}", f"{len(history)} entries")],
     }
     if not history:
-        result["hint"] = (
-            "No receipt found. Operations via fs_write automatically create receipts."
-        )
+        result["hint"] = "No receipt found. Operations via fs_write automatically create receipts."
     result["token_estimate"] = len(str(result)) // 4
     return result

@@ -1,4 +1,5 @@
 """Pytest configuration and shared fixtures for fs_basic tests."""
+
 import os
 import shutil
 import sys
@@ -76,9 +77,7 @@ def large_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for i in range(5000):
         subdir = base / f"dir_{i // 100:02d}"
         subdir.mkdir(exist_ok=True)
-        (subdir / f"file_{i:04d}.txt").write_text(
-            f"file {i}\ncontent line\n", encoding="utf-8"
-        )
+        (subdir / f"file_{i:04d}.txt").write_text(f"file {i}\ncontent line\n", encoding="utf-8")
     return base
 
 
@@ -86,7 +85,5 @@ def large_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def sample_file(work_dir: Path) -> Path:
     """A sample text file for read/write tests."""
     p = work_dir / "sample.txt"
-    p.write_text(
-        "line 1\nline 2\nline 3\nline 4\nline 5\n", encoding="utf-8"
-    )
+    p.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n", encoding="utf-8")
     return p

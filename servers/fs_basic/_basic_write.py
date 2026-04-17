@@ -1,4 +1,5 @@
 """fs_write implementation — PATCH files with two-phase deletion gate."""
+
 import re
 import shutil
 import sys
@@ -28,11 +29,11 @@ def run_fs_write(ops: list[dict], dry_run: bool = False) -> dict:
     try:
         return _fs_write(ops, dry_run)
     except ValueError as e:
-        return _error("fs_write", str(e),
-                      "Ensure all paths are within your home directory.")
+        return _error("fs_write", str(e), "Ensure all paths are within your home directory.")
     except Exception as e:
-        return _error("fs_write", str(e),
-                      "Check op parameters and retry with a single op to isolate.")
+        return _error(
+            "fs_write", str(e), "Check op parameters and retry with a single op to isolate."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +47,7 @@ def _fs_write(ops: list[dict], dry_run: bool) -> dict:
     # Step 1: structural validation
     errors = validate_ops(ops)
     if errors:
-        return _error("fs_write", errors[0],
-                      "Fix the op array and retry.")
+        return _error("fs_write", errors[0], "Fix the op array and retry.")
 
     # Step 2: detect delete ops — they stop the batch
     delete_op_names = ("delete_request", "delete_tree_request")
@@ -98,8 +98,9 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         try:
             path = resolve_path(path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            return _error("fs_write", str(e),
-                          "Verify the path exists and is within your home directory.")
+            return _error(
+                "fs_write", str(e), "Verify the path exists and is within your home directory."
+            )
         size_kb = _get_size_kb(path)
         total_size_kb += size_kb
         t = {
@@ -137,9 +138,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         "targets": targets,
         "total_size_kb": total_size_kb,
         "warning": warning,
-        "next_step": (
-            f"Call fs_write with op=delete_confirm and token={token} to proceed."
-        ),
+        "next_step": (f"Call fs_write with op=delete_confirm and token={token} to proceed."),
         "progress": progress,
     }
     result["token_estimate"] = len(str(result)) // 4
@@ -214,19 +213,17 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
     }
     handler = handlers.get(name)
     if not handler:
-        return _error("fs_write", f"Unhandled op: {name}",
-                      "Use a supported op from the fs_write op table.")
+        return _error(
+            "fs_write", f"Unhandled op: {name}", "Use a supported op from the fs_write op table."
+        )
     try:
         return handler(op_dict, dry_run)
     except ValueError as e:
-        return _error(name, str(e),
-                      "Ensure path is within your home directory.")
+        return _error(name, str(e), "Ensure path is within your home directory.")
     except PermissionError as e:
-        return _error(name, f"Permission denied: {e}",
-                      "Check file/directory permissions.")
+        return _error(name, f"Permission denied: {e}", "Check file/directory permissions.")
     except Exception as e:
-        return _error(name, str(e),
-                      f"Retry op={name} with corrected parameters.")
+        return _error(name, str(e), f"Retry op={name} with corrected parameters.")
 
 
 # ---------------------------------------------------------------------------
@@ -244,18 +241,24 @@ def _op_write_file(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "write_file", "path": str(path),
-            "would_change": True, "backup": backup,
+            "success": True,
+            "op": "write_file",
+            "path": str(path),
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would write {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, content)
-    append_receipt(str(path), "fs_write", "write_file",
-                   "created" if not backup else "overwritten", backup)
+    append_receipt(
+        str(path), "fs_write", "write_file", "created" if not backup else "overwritten", backup
+    )
     r = {
-        "success": True, "op": "write_file", "path": str(path),
+        "success": True,
+        "op": "write_file",
+        "path": str(path),
         "backup": backup,
         "progress": [ok(f"Wrote {path.name}")],
     }
@@ -269,7 +272,9 @@ def _op_append_file(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "append_file", "path": str(path),
+            "success": True,
+            "op": "append_file",
+            "path": str(path),
             "would_change": True,
             "progress": [info(f"Would append to {path.name}")],
         }
@@ -281,7 +286,9 @@ def _op_append_file(op_dict: dict, dry_run: bool) -> dict:
         fh.write(content)
     append_receipt(str(path), "fs_write", "append_file", "appended", None)
     r = {
-        "success": True, "op": "append_file", "path": str(path),
+        "success": True,
+        "op": "append_file",
+        "path": str(path),
         "backup": None,
         "progress": [ok(f"Appended to {path.name}")],
     }
@@ -294,7 +301,9 @@ def _op_create_dir(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "create_dir", "path": str(path),
+            "success": True,
+            "op": "create_dir",
+            "path": str(path),
             "would_change": not path.exists(),
             "progress": [info(f"Would create dir {path.name}")],
         }
@@ -303,7 +312,9 @@ def _op_create_dir(op_dict: dict, dry_run: bool) -> dict:
 
     path.mkdir(parents=True, exist_ok=True)
     r = {
-        "success": True, "op": "create_dir", "path": str(path),
+        "success": True,
+        "op": "create_dir",
+        "path": str(path),
         "progress": [ok(f"Created dir {path.name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -323,7 +334,10 @@ def _op_move(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "move", "src": str(src), "dst": str(dst),
+            "success": True,
+            "op": "move",
+            "src": str(src),
+            "dst": str(dst),
             "would_change": True,
             "progress": [info(f"Would move {src.name} → {dst.name}")],
         }
@@ -334,7 +348,10 @@ def _op_move(op_dict: dict, dry_run: bool) -> dict:
     shutil.move(str(src), dst)
     append_receipt(str(dst), "fs_write", "move", f"moved from {src}", None)
     r = {
-        "success": True, "op": "move", "src": str(src), "dst": str(dst),
+        "success": True,
+        "op": "move",
+        "src": str(src),
+        "dst": str(dst),
         "backup": None,
         "progress": [ok(f"Moved {src.name} → {dst.name}")],
     }
@@ -352,8 +369,12 @@ def _op_copy(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "copy", "src": str(src), "dst": str(dst),
-            "would_change": True, "backup": backup,
+            "success": True,
+            "op": "copy",
+            "src": str(src),
+            "dst": str(dst),
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would copy {src.name} → {dst.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
@@ -366,7 +387,10 @@ def _op_copy(op_dict: dict, dry_run: bool) -> dict:
         shutil.copy2(src, dst)
     append_receipt(str(dst), "fs_write", "copy", f"copied from {src}", backup)
     r = {
-        "success": True, "op": "copy", "src": str(src), "dst": str(dst),
+        "success": True,
+        "op": "copy",
+        "src": str(src),
+        "dst": str(dst),
         "backup": backup,
         "progress": [ok(f"Copied {src.name} → {dst.name}")],
     }
@@ -378,14 +402,20 @@ def _op_rename(op_dict: dict, dry_run: bool) -> dict:
     path = resolve_path(op_dict["path"], must_exist=True)
     new_name: str = op_dict["name"]
     if "/" in new_name or "\\" in new_name:
-        return _error("rename", "name must not contain path separators",
-                      "Use op=move to move across directories.")
+        return _error(
+            "rename",
+            "name must not contain path separators",
+            "Use op=move to move across directories.",
+        )
     dst = path.parent / new_name
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "rename",
-            "path": str(path), "new_path": str(dst), "would_change": True,
+            "success": True,
+            "op": "rename",
+            "path": str(path),
+            "new_path": str(dst),
+            "would_change": True,
             "progress": [info(f"Would rename {path.name} → {new_name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
@@ -393,8 +423,10 @@ def _op_rename(op_dict: dict, dry_run: bool) -> dict:
 
     path.rename(dst)
     r = {
-        "success": True, "op": "rename",
-        "path": str(path), "new_path": str(dst),
+        "success": True,
+        "op": "rename",
+        "path": str(path),
+        "new_path": str(dst),
         "progress": [ok(f"Renamed {path.name} → {new_name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -417,34 +449,44 @@ def _op_replace_text(op_dict: dict, dry_run: bool) -> dict:
         try:
             new_content, n = re.subn(find, replace, content, count=count)
         except re.error as e:
-            return _error("replace_text", f"Invalid regex: {e}",
-                          "Fix the regex in the 'find' parameter.")
+            return _error(
+                "replace_text", f"Invalid regex: {e}", "Fix the regex in the 'find' parameter."
+            )
     else:
         occurrences = content.count(find)
         n = min(occurrences, count) if count else occurrences
         new_content = content.replace(find, replace, count if count else -1)
 
     if n == 0:
-        return _error("replace_text", f"Pattern not found in {path.name}",
-                      "Use fs_read to verify the file content and pattern.")
+        return _error(
+            "replace_text",
+            f"Pattern not found in {path.name}",
+            "Use fs_read to verify the file content and pattern.",
+        )
 
     backup = snapshot(str(path))
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "replace_text", "path": str(path),
-            "would_replace": n, "would_change": True, "backup": backup,
+            "success": True,
+            "op": "replace_text",
+            "path": str(path),
+            "would_replace": n,
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would replace {n} occurrence(s) in {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, new_content)
-    append_receipt(str(path), "fs_write", "replace_text",
-                   f"replaced {n} occurrences", backup)
+    append_receipt(str(path), "fs_write", "replace_text", f"replaced {n} occurrences", backup)
     r = {
-        "success": True, "op": "replace_text", "path": str(path),
-        "replacements": n, "backup": backup,
+        "success": True,
+        "op": "replace_text",
+        "path": str(path),
+        "replacements": n,
+        "backup": backup,
         "progress": [ok(f"Replaced {n} occurrence(s) in {path.name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -474,26 +516,35 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
             inserted += 1
 
     if inserted == 0:
-        return _error("insert_after", f"Pattern not found: '{after_pattern}'",
-                      "Use fs_read to verify file contents before inserting.")
+        return _error(
+            "insert_after",
+            f"Pattern not found: '{after_pattern}'",
+            "Use fs_read to verify file contents before inserting.",
+        )
 
     backup = snapshot(str(path))
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "insert_after", "path": str(path),
-            "insertions": inserted, "would_change": True, "backup": backup,
+            "success": True,
+            "op": "insert_after",
+            "path": str(path),
+            "insertions": inserted,
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would insert after {inserted} match(es)")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, "".join(new_lines))
-    append_receipt(str(path), "fs_write", "insert_after",
-                   f"inserted {inserted} block(s)", backup)
+    append_receipt(str(path), "fs_write", "insert_after", f"inserted {inserted} block(s)", backup)
     r = {
-        "success": True, "op": "insert_after", "path": str(path),
-        "insertions": inserted, "backup": backup,
+        "success": True,
+        "op": "insert_after",
+        "path": str(path),
+        "insertions": inserted,
+        "backup": backup,
         "progress": [ok(f"Inserted after {inserted} match(es) in {path.name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -515,28 +566,36 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
     s = max(0, start)
     e = min(end, total)
     if s >= e:
-        return _error("delete_lines",
-                      f"Invalid line range [{s}, {e}) for file with {total} lines",
-                      "Use fs_read to inspect line numbers before deleting.")
+        return _error(
+            "delete_lines",
+            f"Invalid line range [{s}, {e}) for file with {total} lines",
+            "Use fs_read to inspect line numbers before deleting.",
+        )
 
     new_lines = lines[:s] + lines[e:]
     backup = snapshot(str(path))
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "delete_lines", "path": str(path),
-            "lines_removed": e - s, "would_change": True, "backup": backup,
+            "success": True,
+            "op": "delete_lines",
+            "path": str(path),
+            "lines_removed": e - s,
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would delete lines {s}–{e} from {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, "".join(new_lines))
-    append_receipt(str(path), "fs_write", "delete_lines",
-                   f"removed lines {s}–{e}", backup)
+    append_receipt(str(path), "fs_write", "delete_lines", f"removed lines {s}–{e}", backup)
     r = {
-        "success": True, "op": "delete_lines", "path": str(path),
-        "lines_removed": e - s, "backup": backup,
+        "success": True,
+        "op": "delete_lines",
+        "path": str(path),
+        "lines_removed": e - s,
+        "backup": backup,
         "progress": [ok(f"Deleted lines {s}–{e} from {path.name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -559,9 +618,11 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
     s = max(0, start)
     e = min(end, total)
     if s >= e:
-        return _error("patch_lines",
-                      f"Invalid line range [{s}, {e}) for file with {total} lines",
-                      "Use fs_read to inspect line numbers.")
+        return _error(
+            "patch_lines",
+            f"Invalid line range [{s}, {e}) for file with {total} lines",
+            "Use fs_read to inspect line numbers.",
+        )
 
     patch_lines = patch.splitlines(keepends=True)
     new_lines = lines[:s] + patch_lines + lines[e:]
@@ -569,19 +630,25 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
 
     if dry_run:
         r: dict = {
-            "success": True, "op": "patch_lines", "path": str(path),
-            "lines_replaced": e - s, "would_change": True, "backup": backup,
+            "success": True,
+            "op": "patch_lines",
+            "path": str(path),
+            "lines_replaced": e - s,
+            "would_change": True,
+            "backup": backup,
             "progress": [info(f"Would patch lines {s}–{e} in {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, "".join(new_lines))
-    append_receipt(str(path), "fs_write", "patch_lines",
-                   f"patched lines {s}–{e}", backup)
+    append_receipt(str(path), "fs_write", "patch_lines", f"patched lines {s}–{e}", backup)
     r = {
-        "success": True, "op": "patch_lines", "path": str(path),
-        "lines_replaced": e - s, "backup": backup,
+        "success": True,
+        "op": "patch_lines",
+        "path": str(path),
+        "lines_replaced": e - s,
+        "backup": backup,
         "progress": [ok(f"Patched lines {s}–{e} in {path.name}")],
     }
     r["token_estimate"] = len(str(r)) // 4
@@ -594,7 +661,9 @@ def _op_set_permissions(op_dict: dict, dry_run: bool) -> dict:
 
     if sys.platform == "win32":
         r: dict = {
-            "success": True, "op": "set_permissions", "path": str(path),
+            "success": True,
+            "op": "set_permissions",
+            "path": str(path),
             "note": "set_permissions is a no-op on Windows",
             "progress": [warn("set_permissions no-op on Windows")],
         }
@@ -604,14 +673,19 @@ def _op_set_permissions(op_dict: dict, dry_run: bool) -> dict:
     try:
         mode_int = int(mode_str, 8)
     except ValueError:
-        return _error("set_permissions",
-                      f"Invalid octal mode '{mode_str}'",
-                      "Provide mode as octal string e.g. '755' or '644'.")
+        return _error(
+            "set_permissions",
+            f"Invalid octal mode '{mode_str}'",
+            "Provide mode as octal string e.g. '755' or '644'.",
+        )
 
     if dry_run:
         r = {
-            "success": True, "op": "set_permissions", "path": str(path),
-            "mode": oct(mode_int), "would_change": True,
+            "success": True,
+            "op": "set_permissions",
+            "path": str(path),
+            "mode": oct(mode_int),
+            "would_change": True,
             "progress": [info(f"Would chmod {mode_str} {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
@@ -619,7 +693,9 @@ def _op_set_permissions(op_dict: dict, dry_run: bool) -> dict:
 
     path.chmod(mode_int)
     r = {
-        "success": True, "op": "set_permissions", "path": str(path),
+        "success": True,
+        "op": "set_permissions",
+        "path": str(path),
         "mode": oct(mode_int),
         "progress": [ok(f"Set permissions {mode_str} on {path.name}")],
     }

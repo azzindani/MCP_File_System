@@ -1,4 +1,5 @@
 """fs_query implementation — LOCATE files by name or content."""
+
 import fnmatch
 import json
 import mimetypes
@@ -23,6 +24,7 @@ from _basic_helpers import (
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def run_fs_query(
     pattern: str,
     path: str = "",
@@ -36,22 +38,32 @@ def run_fs_query(
 ) -> dict:
     try:
         return _fs_query(
-            pattern, path, type_, content, grep_mode,
-            context_lines, include_meta, follow_symlinks, max_results,
+            pattern,
+            path,
+            type_,
+            content,
+            grep_mode,
+            context_lines,
+            include_meta,
+            follow_symlinks,
+            max_results,
         )
     except ValueError as e:
         return _error(
-            "fs_query", str(e),
+            "fs_query",
+            str(e),
             "Ensure path is absolute and within your home directory.",
         )
     except PermissionError as e:
         return _error(
-            "fs_query", f"Permission denied: {e}",
+            "fs_query",
+            f"Permission denied: {e}",
             "Check directory permissions or choose a path you own.",
         )
     except Exception as e:
         return _error(
-            "fs_query", str(e),
+            "fs_query",
+            str(e),
             "Use fs_query with a simpler pattern to narrow the scope.",
         )
 
@@ -59,6 +71,7 @@ def run_fs_query(
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 def _fs_query(
     pattern: str,
@@ -75,22 +88,34 @@ def _fs_query(
 
     # --- input validation ---
     if not pattern:
-        return _error("fs_query", "pattern must not be empty",
-                      "Provide a glob pattern such as '*.py' or 'report_*'.")
+        return _error(
+            "fs_query",
+            "pattern must not be empty",
+            "Provide a glob pattern such as '*.py' or 'report_*'.",
+        )
     if type_ not in ("file", "dir", "any"):
-        return _error("fs_query", f"type_ must be 'file', 'dir', or 'any', got '{type_}'",
-                      "Use one of: file, dir, any.")
+        return _error(
+            "fs_query",
+            f"type_ must be 'file', 'dir', or 'any', got '{type_}'",
+            "Use one of: file, dir, any.",
+        )
     context_lines = max(0, min(context_lines, get_max_context_lines()))
 
     # --- resolve root ---
     root_str = path or str(Path.home())
     root = resolve_path(root_str)
     if not root.exists():
-        return _error("fs_query", f"Search root does not exist: {root.name}",
-                      "Use fs_read with mode=tree to inspect the directory structure.")
+        return _error(
+            "fs_query",
+            f"Search root does not exist: {root.name}",
+            "Use fs_read with mode=tree to inspect the directory structure.",
+        )
     if not root.is_dir():
-        return _error("fs_query", f"Search root is not a directory: {root.name}",
-                      "Provide a directory path for the 'path' parameter.")
+        return _error(
+            "fs_query",
+            f"Search root is not a directory: {root.name}",
+            "Provide a directory path for the 'path' parameter.",
+        )
 
     # --- respect constrained mode ---
     effective_max = min(max_results, get_max_results())
@@ -99,7 +124,11 @@ def _fs_query(
 
     # --- name search ---
     name_matches: list[Path] = _name_search(
-        root, pattern, type_, follow_symlinks, effective_max * 10  # gather extra to filter
+        root,
+        pattern,
+        type_,
+        follow_symlinks,
+        effective_max * 10,  # gather extra to filter
     )
     backend = get_name_backend()
 
@@ -109,13 +138,21 @@ def _fs_query(
         if grep_mode:
             cb = get_content_backend()
             return _build_grep_response(
-                name_matches, content, is_regex, context_lines,
-                effective_max, include_meta, root, pattern, backend, cb, progress,
+                name_matches,
+                content,
+                is_regex,
+                context_lines,
+                effective_max,
+                include_meta,
+                root,
+                pattern,
+                backend,
+                cb,
+                progress,
             )
         else:
             name_matches = [
-                p for p in name_matches
-                if p.is_file() and _file_contains(p, content, is_regex)
+                p for p in name_matches if p.is_file() and _file_contains(p, content, is_regex)
             ]
 
     # --- truncate ---
@@ -156,6 +193,7 @@ def _fs_query(
 # Name search
 # ---------------------------------------------------------------------------
 
+
 def _name_search(
     root: Path,
     pattern: str,
@@ -190,6 +228,7 @@ def _name_search(
 # Content search helpers
 # ---------------------------------------------------------------------------
 
+
 def _looks_like_regex(pattern: str) -> bool:
     """Heuristic: if pattern contains regex metacharacters, treat as regex."""
     return bool(re.search(r"[\\.*+?^${}()\[\]|]", pattern))
@@ -205,9 +244,7 @@ def _file_contains(file_path: Path, pattern: str, is_regex: bool) -> bool:
         return False
 
 
-def _python_grep(
-    file_path: Path, pattern: str, context_lines: int, is_regex: bool
-) -> list[dict]:
+def _python_grep(file_path: Path, pattern: str, context_lines: int, is_regex: bool) -> list[dict]:
     try:
         text = file_path.read_text(encoding="utf-8", errors="replace")
         lines = text.splitlines()
@@ -376,6 +413,7 @@ def _build_grep_response(
 # ---------------------------------------------------------------------------
 # Metadata helper
 # ---------------------------------------------------------------------------
+
 
 def _with_meta(p: Path) -> dict:
     try:

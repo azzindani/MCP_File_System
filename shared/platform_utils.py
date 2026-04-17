@@ -3,6 +3,7 @@
 All limit functions read MCP_CONSTRAINED_MODE env var at call time
 so tests can override it without restarting.
 """
+
 import os
 import shutil
 import sys

@@ -1,4 +1,5 @@
 """fs_manage implementation — disk usage, permissions, symlinks, versions."""
+
 import shutil
 import stat as stat_mod
 from pathlib import Path
@@ -20,14 +21,15 @@ def run_fs_manage(action: str, path: str = "") -> dict:
     try:
         return _fs_manage(action, path)
     except ValueError as e:
-        return _error("fs_manage", str(e),
-                      "Ensure path is within your home directory.")
+        return _error("fs_manage", str(e), "Ensure path is within your home directory.")
     except PermissionError as e:
-        return _error("fs_manage", f"Permission denied: {e}",
-                      "Check permissions or choose a path you own.")
+        return _error(
+            "fs_manage", f"Permission denied: {e}", "Check permissions or choose a path you own."
+        )
     except Exception as e:
-        return _error("fs_manage", str(e),
-                      "Use fs_manage with action=disk_usage for a simpler query.")
+        return _error(
+            "fs_manage", str(e), "Use fs_manage with action=disk_usage for a simpler query."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +39,11 @@ def run_fs_manage(action: str, path: str = "") -> dict:
 
 def _fs_manage(action: str, path: str) -> dict:
     if action not in ("disk_usage", "permissions", "symlink_info", "versions"):
-        return _error("fs_manage", f"Unknown action '{action}'",
-                      "Use one of: disk_usage, permissions, symlink_info, versions.")
+        return _error(
+            "fs_manage",
+            f"Unknown action '{action}'",
+            "Use one of: disk_usage, permissions, symlink_info, versions.",
+        )
 
     if action == "disk_usage":
         return _action_disk_usage(path)
@@ -60,8 +65,9 @@ def _action_disk_usage(path: str) -> dict:
     try:
         usage = shutil.disk_usage(str(target))
     except Exception as e:
-        return _error("fs_manage", f"Cannot get disk usage: {e}",
-                      "Ensure the path exists and is accessible.")
+        return _error(
+            "fs_manage", f"Cannot get disk usage: {e}", "Ensure the path exists and is accessible."
+        )
 
     result: dict = {
         "success": True,
@@ -83,8 +89,11 @@ def _action_disk_usage(path: str) -> dict:
 
 def _action_permissions(path: str) -> dict:
     if not path:
-        return _error("fs_manage", "path required for action=permissions",
-                      "Provide the file or directory path.")
+        return _error(
+            "fs_manage",
+            "path required for action=permissions",
+            "Provide the file or directory path.",
+        )
 
     target = resolve_path(path, must_exist=True)
     st = target.lstat()
@@ -105,6 +114,7 @@ def _action_permissions(path: str) -> dict:
     if platform in ("linux", "macos"):
         import grp
         import pwd
+
         try:
             result["owner"] = pwd.getpwuid(st.st_uid).pw_name
         except (KeyError, ImportError):
@@ -122,8 +132,9 @@ def _action_permissions(path: str) -> dict:
 
 def _action_symlink_info(path: str) -> dict:
     if not path:
-        return _error("fs_manage", "path required for action=symlink_info",
-                      "Provide the path to inspect.")
+        return _error(
+            "fs_manage", "path required for action=symlink_info", "Provide the path to inspect."
+        )
 
     # Build raw (unresolved) path for accurate is_symlink check
     raw = Path(path).expanduser()
@@ -131,15 +142,17 @@ def _action_symlink_info(path: str) -> dict:
         raw = Path.home() / raw
 
     if not raw.exists() and not raw.is_symlink():
-        return _error("fs_manage", f"Path does not exist: {raw.name}",
-                      "Use fs_query to locate the file first.")
+        return _error(
+            "fs_manage",
+            f"Path does not exist: {raw.name}",
+            "Use fs_query to locate the file first.",
+        )
 
     # Validate within home (resolve_path resolves symlink for security check)
     try:
         resolve_path(path)
     except ValueError as e:
-        return _error("fs_manage", str(e),
-                      "Ensure path is within your home directory.")
+        return _error("fs_manage", str(e), "Ensure path is within your home directory.")
     except FileNotFoundError:
         pass  # OK for broken symlinks — raw check above already passed
 
@@ -173,8 +186,11 @@ def _action_symlink_info(path: str) -> dict:
 
 def _action_versions(path: str) -> dict:
     if not path:
-        return _error("fs_manage", "path required for action=versions",
-                      "Provide the file path to list snapshots for.")
+        return _error(
+            "fs_manage",
+            "path required for action=versions",
+            "Provide the file path to list snapshots for.",
+        )
 
     file_path = resolve_path(path)
     versions = list_versions(str(file_path))

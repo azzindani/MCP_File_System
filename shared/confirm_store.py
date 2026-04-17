@@ -3,6 +3,7 @@
 Tokens expire after 300 seconds and are consumed on first use.
 Server restart clears all pending tokens.
 """
+
 import secrets
 import time
 

@@ -4,6 +4,7 @@ Snapshots go to ~/.mcp_versions/{stem}_{UTC_ts}{ext}.bak
 snapshot() never raises — returns "" on any error.
 All Path.home() calls are deferred to call time for test isolation.
 """
+
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -69,9 +70,7 @@ def list_versions(file_path: str) -> list[dict]:
                     {
                         "backup": str(bak),
                         "size_bytes": stat.st_size,
-                        "created": datetime.fromtimestamp(
-                            stat.st_mtime, tz=UTC
-                        ).isoformat(),
+                        "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                     }
                 )
             except OSError:
