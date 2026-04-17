@@ -59,12 +59,12 @@ def main() -> int:
         all_violations.extend(_check_file(f))
 
     if all_violations:
-        print("FAIL — tool docstring violations found:", file=sys.stderr)
+        print("FAIL -- tool docstring violations found:", file=sys.stderr)
         for v in all_violations:
             print(f"  {v}", file=sys.stderr)
         return 1
 
-    print(f"OK — checked {len(server_files)} server file(s), all docstrings ≤80 chars")
+    print(f"OK -- checked {len(server_files)} server file(s), all docstrings <=80 chars")
     return 0
 
 
