@@ -1,0 +1,22 @@
+[project]
+name = "fs-basic"
+version = "0.1.0"
+description = "fs_basic — Tier 1 File Management MCP server"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0.0",
+    "mcp-filesystem",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["servers"]
+
+[project.scripts]
+fs-basic = "servers.fs_basic.server:main"
+
+[tool.uv.sources]
+mcp-filesystem = { workspace = true }
