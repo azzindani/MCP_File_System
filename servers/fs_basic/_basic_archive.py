@@ -233,7 +233,7 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
 
     out_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(arc, "r:gz") as tf:
-        tf.extractall(out_dir)
+        tf.extractall(out_dir, filter="data")
 
     progress.append(ok(f"Extracted {len(members)} files to {out_dir.name}"))
     result = {

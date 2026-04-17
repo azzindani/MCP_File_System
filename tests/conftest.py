@@ -53,15 +53,13 @@ def simple_dir(work_dir: Path) -> Path:
 def messy_dir(work_dir: Path) -> Path:
     """Nested dir with unicode names and a symlink, inside tmp_home."""
     dst = work_dir / "messy"
-    shutil.copytree(_MESSY_SRC, dst, symlinks=False)
-    # Always create a proper symlink within dst (copytree may have copied it
-    # as a regular file when symlinks=False).
+    shutil.copytree(_MESSY_SRC, dst, symlinks=True)
+    # Ensure link_to_readme.txt is a working symlink to readme.txt in dst.
     link = dst / "link_to_readme.txt"
     readme = dst / "readme.txt"
-    if link.exists() and not link.is_symlink():
-        link.unlink()  # remove the regular-file copy
-    if readme.exists() and not link.is_symlink():
-        link.symlink_to(readme)
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(readme)
     return dst
 
 

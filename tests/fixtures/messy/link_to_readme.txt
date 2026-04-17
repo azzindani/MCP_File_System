@@ -1,1 +1,1 @@
-/home/user/MCP_File_System/tests/fixtures/messy/readme.txt
+readme.txt
