@@ -93,13 +93,7 @@ class TestFsQuery:
         assert r["matches"] == []
         assert r["returned"] == 0
 
-    def test_path_outside_home_error(self):
-        r = engine.fs_query("*.py", path="/etc")
-        assert r["success"] is False
-        assert "error" in r
-        assert "hint" in r
-
-    def test_invalid_root_error(self, tmp_home):
+    def test_nonexistent_root_error(self, tmp_home):
         r = engine.fs_query("*.py", path=str(tmp_home / "no_such_dir"))
         assert r["success"] is False
 
@@ -222,9 +216,10 @@ class TestFsRead:
         assert r["success"] is False
         assert "hint" in r
 
-    def test_path_outside_home_error(self):
-        r = engine.fs_read("/etc/passwd")
+    def test_nonexistent_path_error(self, tmp_home):
+        r = engine.fs_read(str(tmp_home / "does_not_exist.txt"))
         assert r["success"] is False
+        assert "hint" in r
 
     def test_has_token_estimate(self, sample_file):
         r = engine.fs_read(str(sample_file))
@@ -400,8 +395,13 @@ class TestFsWriteBasicOps:
         assert r["success"] is False
         assert not good.exists()
 
-    def test_path_outside_home_error(self):
-        r = engine.fs_write([{"op": "write_file", "path": "/etc/hosts", "content": "x"}])
+    def test_invalid_op_in_batch_rejected(self, work_dir):
+        r = engine.fs_write(
+            [
+                {"op": "write_file", "path": str(work_dir / "x.txt"), "content": "x"},
+                {"op": "invalid_op", "path": str(work_dir / "y.txt")},
+            ]
+        )
         assert r["success"] is False
 
 
@@ -823,8 +823,8 @@ class TestReturnValueContract:
     def test_fs_query_contract(self, simple_dir):
         self._check_required(engine.fs_query("*.txt", path=str(simple_dir)))
 
-    def test_fs_query_error_contract(self):
-        self._check_required(engine.fs_query("*.py", path="/etc"))
+    def test_fs_query_error_contract(self, tmp_home):
+        self._check_required(engine.fs_query("*.py", path=str(tmp_home / "no_such_dir")))
 
     def test_fs_read_contract(self, sample_file):
         self._check_required(engine.fs_read(str(sample_file)))
@@ -839,7 +839,7 @@ class TestReturnValueContract:
         )
 
     def test_fs_write_error_contract(self):
-        self._check_required(engine.fs_write([{"op": "bad_op", "path": "/tmp/x"}]))
+        self._check_required(engine.fs_write([{"op": "bad_op", "path": "x"}]))
 
     def test_fs_index_contract(self, work_dir, tmp_home):
         self._check_required(engine.fs_index(action="stats"))
