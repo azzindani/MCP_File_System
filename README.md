@@ -204,6 +204,7 @@ Build and query a SQLite FTS5 filename index, or read a file's operation receipt
 |---|---|
 | `build` | Scan `path` recursively → write to `~/.mcp_fs_index/index.db` |
 | `query` | Fast FTS5 lookup by filename pattern (no disk scan) |
+| `list` | List all indexed entries under `path` (no pattern required) |
 | `stats` | Index metadata: file count, `last_built`, indexed roots |
 | `clear` | Remove index entries for `path` subtree |
 | `receipt` | Read operation history from `{path}.mcp_receipt.json` |

@@ -93,6 +93,14 @@ def _fs_query(
             "pattern must not be empty",
             "Provide a glob pattern such as '*.py' or 'report_*'.",
         )
+    _type_aliases = {
+        "directory": "dir",
+        "folder": "dir",
+        "folders": "dir",
+        "dirs": "dir",
+        "files": "file",
+    }
+    type_ = _type_aliases.get(type_, type_)
     if type_ not in ("file", "dir", "any"):
         return _error(
             "fs_query",

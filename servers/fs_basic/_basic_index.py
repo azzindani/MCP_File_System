@@ -52,11 +52,11 @@ def run_fs_index(
 
 
 def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
-    if action not in ("build", "query", "stats", "clear", "receipt"):
+    if action not in ("build", "query", "list", "stats", "clear", "receipt"):
         return _error(
             "fs_index",
             f"Unknown action '{action}'",
-            "Use one of: build, query, stats, clear, receipt.",
+            "Use one of: build, query, list, stats, clear, receipt.",
         )
 
     if action == "receipt":
@@ -65,6 +65,8 @@ def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
         return _action_build(path)
     if action == "query":
         return _action_query(pattern, path, max_results)
+    if action == "list":
+        return _action_list(path, max_results)
     if action == "stats":
         return _action_stats()
     # clear
@@ -159,6 +161,62 @@ def _action_build(path: str) -> dict:
         "db_path": str(_db_path()),
         "progress": progress,
     }
+    result["token_estimate"] = len(str(result)) // 4
+    return result
+
+
+def _action_list(path: str, max_results: int) -> dict:
+    if not _db_path().exists():
+        return _error(
+            "fs_index",
+            "Index not built yet",
+            "Run fs_index with action=build to create the index first.",
+        )
+
+    effective_max = min(max_results, get_max_results())
+    root_filter = ""
+    if path:
+        try:
+            root_filter = str(resolve_path(path))
+        except ValueError as e:
+            return _error("fs_index", str(e), "Ensure path is within your home directory.")
+
+    conn = _get_conn()
+    try:
+        if root_filter:
+            rows = conn.execute(
+                f"SELECT path, name, size, mtime, type FROM {_FILES_TABLE} "
+                f"WHERE path LIKE ? ORDER BY path LIMIT ?",
+                (root_filter + "%", effective_max + 1),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT path, name, size, mtime, type FROM {_FILES_TABLE} ORDER BY path LIMIT ?",
+                (effective_max + 1,),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    truncated = len(rows) > effective_max
+    entries = [
+        {"path": r[0], "name": r[1], "size": r[2], "mtime": r[3], "type": r[4]}
+        for r in rows[:effective_max]
+    ]
+
+    result: dict = {
+        "success": True,
+        "op": "fs_index",
+        "action": "list",
+        "root": root_filter or str(Path.home()),
+        "entries": entries,
+        "returned": len(entries),
+        "truncated": truncated,
+        "progress": [ok(f"Listed {len(entries)} indexed entries")],
+    }
+    if truncated:
+        result["hint"] = (
+            f"Results capped at {effective_max}. Use action=query with a pattern to narrow results."
+        )
     result["token_estimate"] = len(str(result)) // 4
     return result
 

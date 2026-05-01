@@ -38,6 +38,20 @@ def run_fs_manage(action: str, path: str = "") -> dict:
 
 
 def _fs_manage(action: str, path: str) -> dict:
+    _action_aliases = {
+        "symlink": "symlink_info",
+        "link": "symlink_info",
+        "snapshots": "versions",
+        "snapshot": "versions",
+        "history": "versions",
+        "perms": "permissions",
+        "perm": "permissions",
+        "chmod": "permissions",
+        "size": "disk_usage",
+        "storage": "disk_usage",
+        "space": "disk_usage",
+    }
+    action = _action_aliases.get(action, action)
     if action not in ("disk_usage", "permissions", "symlink_info", "versions"):
         return _error(
             "fs_manage",

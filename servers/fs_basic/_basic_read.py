@@ -75,6 +75,16 @@ def _fs_read(
     if mode == "auto":
         mode = "content" if resolved.is_file() else "tree"
 
+    _mode_aliases = {
+        "list": "tree",
+        "ls": "tree",
+        "read": "content",
+        "text": "content",
+        "info": "meta",
+        "stat": "meta",
+        "metadata": "meta",
+    }
+    mode = _mode_aliases.get(mode, mode)
     if mode not in ("content", "tree", "meta", "diff"):
         return _error(
             "fs_read", f"Unknown mode '{mode}'", "Use one of: content, tree, meta, diff, auto."

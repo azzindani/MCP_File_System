@@ -59,7 +59,10 @@ def messy_dir(work_dir: Path) -> Path:
     readme = dst / "readme.txt"
     if link.is_symlink() or link.exists():
         link.unlink()
-    link.symlink_to(readme)
+    try:
+        link.symlink_to(readme)
+    except OSError:
+        pass  # symlinks require elevated privileges on Windows without Developer Mode
     return dst
 
 

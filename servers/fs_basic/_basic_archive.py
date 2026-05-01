@@ -42,6 +42,8 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
         return _error(
             "fs_archive", f"Unknown action '{action}'", "Use one of: create, extract, list."
         )
+    _format_aliases = {"tar": "tar.gz", "tgz": "tar.gz", "gz": "tar.gz", "gzip": "tar.gz"}
+    format_ = _format_aliases.get(format_, format_)
     if format_ not in ("zip", "tar.gz"):
         return _error("fs_archive", f"Unknown format '{format_}'", "Use 'zip' or 'tar.gz'.")
 
