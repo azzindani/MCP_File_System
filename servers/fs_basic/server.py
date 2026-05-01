@@ -109,7 +109,7 @@ def fs_index(
     pattern: str = "",
     max_results: int = 50,
 ) -> dict:
-    """Build/query file index or read operation receipt history."""
+    """Build/query/list file index or read operation receipt history."""
     return engine.fs_index(
         action=action,
         path=path,

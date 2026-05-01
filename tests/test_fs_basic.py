@@ -566,6 +566,32 @@ class TestFsIndex:
         assert r["action"] == "receipt"
         assert isinstance(r["history"], list)
 
+    def test_list_returns_entries(self, work_dir, tmp_home):
+        (work_dir / "list_a.txt").write_text("a")
+        (work_dir / "list_b.py").write_text("b")
+        engine.fs_index(action="build", path=str(work_dir))
+        r = engine.fs_index(action="list", path=str(work_dir))
+        assert r["success"] is True
+        assert r["action"] == "list"
+        assert isinstance(r["entries"], list)
+        assert r["returned"] >= 2
+        assert "truncated" in r
+
+    def test_list_no_path_uses_all_entries(self, work_dir, tmp_home):
+        (work_dir / "all_a.txt").write_text("a")
+        engine.fs_index(action="build", path=str(work_dir))
+        r = engine.fs_index(action="list")
+        assert r["success"] is True
+        assert r["returned"] >= 1
+
+    def test_list_no_index_returns_error(self, work_dir, tmp_home):
+        db = Path.home() / ".mcp_fs_index" / "index.db"
+        if db.exists():
+            db.unlink()
+        r = engine.fs_index(action="list", path=str(work_dir))
+        assert r["success"] is False
+        assert "hint" in r
+
 
 # ===========================================================================
 # fs_manage
@@ -687,6 +713,93 @@ class TestFsArchive:
         assert r["success"] is True
         assert r.get("dry_run") is True
         assert not arc.exists()
+
+
+# ===========================================================================
+# Alias normalisation — intuitive synonyms must resolve correctly
+# ===========================================================================
+
+
+class TestAliases:
+    def test_fs_query_type_directory(self, work_dir):
+        (work_dir / "sub_a").mkdir()
+        (work_dir / "sub_b").mkdir()
+        (work_dir / "file.txt").write_text("x")
+        r = engine.fs_query("*", path=str(work_dir), type_="directory")
+        assert r["success"] is True
+        for m in r["matches"]:
+            assert Path(m).is_dir()
+
+    def test_fs_query_type_folder(self, work_dir):
+        (work_dir / "fold_a").mkdir()
+        (work_dir / "fold_b").mkdir()
+        r = engine.fs_query("fold_*", path=str(work_dir), type_="folder")
+        assert r["success"] is True
+        assert len(r["matches"]) == 2
+        for m in r["matches"]:
+            assert Path(m).is_dir()
+
+    def test_fs_query_type_files(self, simple_dir):
+        r = engine.fs_query("*", path=str(simple_dir), type_="files")
+        assert r["success"] is True
+        for m in r["matches"]:
+            assert Path(m).is_file()
+
+    def test_fs_read_mode_list_gives_tree(self, work_dir):
+        (work_dir / "a.txt").write_text("a")
+        (work_dir / "sub").mkdir()
+        r = engine.fs_read(str(work_dir), mode="list")
+        assert r["success"] is True
+        assert r["mode"] == "tree"
+
+    def test_fs_read_mode_stat_gives_meta(self, sample_file):
+        r = engine.fs_read(str(sample_file), mode="stat")
+        assert r["success"] is True
+        assert r["mode"] == "meta"
+        assert "size" in r
+
+    def test_fs_read_mode_info_gives_meta(self, sample_file):
+        r = engine.fs_read(str(sample_file), mode="info")
+        assert r["success"] is True
+        assert r["mode"] == "meta"
+
+    def test_fs_manage_action_symlink(self, sample_file):
+        r = engine.fs_manage(action="symlink", path=str(sample_file))
+        assert r["success"] is True
+        assert r["action"] == "symlink_info"
+
+    def test_fs_manage_action_snapshot(self, sample_file, tmp_home):
+        engine.fs_write([{"op": "write_file", "path": str(sample_file), "content": "v2\n"}])
+        r = engine.fs_manage(action="snapshot", path=str(sample_file))
+        assert r["success"] is True
+        assert r["action"] == "versions"
+
+    def test_fs_manage_action_perms(self, sample_file):
+        r = engine.fs_manage(action="perms", path=str(sample_file))
+        assert r["success"] is True
+        assert r["action"] == "permissions"
+
+    def test_fs_manage_action_space(self, tmp_home):
+        r = engine.fs_manage(action="space", path=str(tmp_home))
+        assert r["success"] is True
+        assert r["action"] == "disk_usage"
+
+    def test_fs_archive_format_tar(self, work_dir):
+        src = work_dir / "alias_src"
+        src.mkdir()
+        (src / "f.txt").write_text("x")
+        arc = work_dir / "alias.tar.gz"
+        r = engine.fs_archive(action="create", path=str(arc), target=str(src), format_="tar")
+        assert r["success"] is True
+        assert arc.exists()
+
+    def test_fs_archive_format_tgz(self, work_dir):
+        src = work_dir / "tgz_src"
+        src.mkdir()
+        (src / "g.txt").write_text("y")
+        arc = work_dir / "alias.tgz.tar.gz"
+        r = engine.fs_archive(action="create", path=str(arc), target=str(src), format_="tgz")
+        assert r["success"] is True
 
 
 # ===========================================================================
