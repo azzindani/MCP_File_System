@@ -7,11 +7,11 @@ from pathlib import Path
 
 
 def resolve_path(file_path: str, must_exist: bool = False) -> Path:
-    """Resolve path; raise ValueError if outside home directory.
+    """Resolve and normalise a path. Rejects UNC network paths on Windows.
 
-    Handles ~ expansion and relative paths (relative to home).
-    Rejects path traversal sequences and paths outside home.
-    Applies Windows long-path prefix when needed.
+    Handles ~ expansion and relative paths (resolved from home).
+    Applies Windows long-path prefix for paths > 200 chars.
+    No directory restriction — the tool is designed to work anywhere.
     """
     home = Path.home()
     raw = Path(file_path).expanduser()
@@ -19,14 +19,11 @@ def resolve_path(file_path: str, must_exist: bool = False) -> Path:
         raw = home / raw
     path = raw.resolve()
 
-    # Normalise home for comparison (resolve symlinks in home too)
-    home_resolved = home.resolve()
-    try:
-        path.relative_to(home_resolved)
-    except ValueError:
+    # Reject UNC network paths — this server is local-only
+    if sys.platform == "win32" and str(path).startswith("\\\\"):
         raise ValueError(
-            f"Path '{path}' is outside your home directory. "
-            "Only paths within your home directory are allowed."
+            f"UNC network paths are not supported: '{path}'. "
+            "This server operates on local files only."
         )
 
     if must_exist and not path.exists():
