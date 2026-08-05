@@ -69,6 +69,16 @@ fs_index  →  VERIFY   Build/query/refresh SQLite index; receipt; stats
 - No GPU usage — runs entirely on CPU
 - No internet required for any core operation
 
+**Deployment scope:** local-first is the default — the bullets above always hold
+for the file operations themselves; nothing here ever calls out to a cloud API
+or a remote filesystem. Separately, the *server* can also run in HTTP mode,
+self-hosted behind a reverse proxy, so it can be connected as a remote endpoint
+by AI platforms and harnesses (Claude Desktop, claude.ai remote MCP, other MCP
+clients) rather than only as a local stdio process — see §12. Remote mode is
+opt-in, bearer-token authenticated, and still runs on infrastructure you
+control. This is one of six sibling `MCP_*` repos brought to this same
+deployment model.
+
 ---
 
 ## 2. Self-Hosted Execution Principle (STANDARDS.md §4)
@@ -926,7 +936,44 @@ Set `MCP_CONSTRAINED_MODE: "1"` on machines with ≤8 GB VRAM.
 
 ---
 
-## 12. Testing Requirements (STANDARDS.md §27)
+## 12. Transport and Deployment (STANDARDS.md §30, §31)
+
+The install entries above are for local stdio use (LM Studio, Claude Desktop
+config pointing at a local process). This server can also run in HTTP mode,
+self-hosted behind a reverse proxy, so it can be connected as a remote
+endpoint by AI platforms and harnesses (Claude Desktop, claude.ai remote MCP,
+other MCP clients) instead of only as a local stdio process — controlled by
+`FS_HOST`/`FS_PORT` env vars and `--transport http`.
+
+Bearer auth (`servers/fs_basic/deploy_auth.py`, `build_auth("FS", host,
+port)`) gates the whole server:
+
+- `FS_TOKENS_FILE` (named tokens, JSON `{name: token}`) — highest priority
+- `FS_TOKENS` (inline `"name:token,name2:token2"`)
+- `FS_API_KEY` (single shared token)
+- unset = open mode (no auth) — localhost/private-network use only, never for
+  a publicly reachable deployment
+
+The production deployment runs `FS_API_KEY` set from a local `.env` file
+(gitignored, never committed) behind a reverse proxy; a request without a
+valid `Authorization: Bearer <token>` header is rejected with `401` before it
+reaches any tool — this matters more here than in most sibling repos, since
+`fs_write` can create, overwrite, and delete real files on the host.
+
+`docker-compose.yml` runs one container (`mcp-filesystem-fs-basic`,
+`FS_HOST=0.0.0.0`, default port `8801`).
+
+### Remote smoke tests (not part of pytest / CI)
+
+Verifying the deployed HTTP endpoint (auth enforcement, real tool calls
+against the real public domain, using real files) is a separate,
+manual/on-demand check — hand-authored `curl` sessions or a
+`remote_smoke_test.sh`, never wired into CI, never storing the live API key
+in the repo. `pytest` stays offline-only per STANDARDS.md — §13 below.
+
+---
+
+## 13. Testing Requirements (STANDARDS.md §27)
 
 Tests import `engine.py` directly. Never spin up an MCP server process.
 
@@ -1042,7 +1089,7 @@ env:
 
 ---
 
-## 13. What the AI Must Never Do
+## 14. What the AI Must Never Do
 
 1. Print to stdout in `server.py`, `engine.py`, or any `_basic_*.py` file
 2. Return a plain string, list, None, or boolean from any tool — always `dict`
@@ -1068,7 +1115,7 @@ env:
 
 ---
 
-## 14. Return Value Contract (STANDARDS.md §16)
+## 15. Return Value Contract (STANDARDS.md §16)
 
 Every tool returns a dict. Required fields in every response:
 
@@ -1087,7 +1134,7 @@ Every tool returns a dict. Required fields in every response:
 
 ---
 
-## 15. Progress Tracker
+## 16. Progress Tracker
 
 ### Phase 1 — Shared Modules
 - [ ] `shared/__init__.py`
