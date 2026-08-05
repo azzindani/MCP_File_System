@@ -12,3 +12,6 @@ venv/
 *.bak
 tokens.json
 /fs-root/
+
+# Deployment secrets
+.env
