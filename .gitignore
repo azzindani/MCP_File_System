@@ -10,6 +10,5 @@ build/
 venv/
 *.db
 *.bak
-uv.lock
 tokens.json
 /fs-root/

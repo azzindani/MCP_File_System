@@ -229,18 +229,24 @@ Every truncated response: `"truncated": True` + `"hint"` with recovery instructi
 ### Tool 1 — fs_query (LOCATE)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False,
-                        "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
 def fs_query(
-    pattern: str,                   # glob: "*.py" "report_*" or literal name
-    path: str = "",                 # root to search ("" = user home dir)
-    type_: str = "any",             # "file" | "dir" | "any"
-    content: str = "",              # substring/regex to match inside files
-    grep_mode: bool = False,        # True = return line-level matches not just paths
-    context_lines: int = 0,         # lines before+after each grep match (0–5)
-    include_meta: bool = False,     # True = include size+mtime+mime per result
+    pattern: str,  # glob: "*.py" "report_*" or literal name
+    path: str = "",  # root to search ("" = user home dir)
+    type_: str = "any",  # "file" | "dir" | "any"
+    content: str = "",  # substring/regex to match inside files
+    grep_mode: bool = False,  # True = return line-level matches not just paths
+    context_lines: int = 0,  # lines before+after each grep match (0–5)
+    include_meta: bool = False,  # True = include size+mtime+mime per result
     follow_symlinks: bool = False,  # True = follow symlinks (risk: loops)
-    max_results: int = 50,          # constrained mode overrides to 10
+    max_results: int = 50,  # constrained mode overrides to 10
 ) -> dict:
     """Locate files by name/content. grep_mode returns matching lines."""
 ```
@@ -304,16 +310,22 @@ def fs_query(
 ### Tool 2 — fs_read (INSPECT / VERIFY)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False,
-                        "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
 def fs_read(
-    path: str,                      # absolute path to file or directory
-    mode: str = "auto",             # "content"|"tree"|"meta"|"diff"|"auto"
-    start_line: int = 0,            # content mode: first line (0-indexed)
-    end_line: int = 100,            # content mode: last line exclusive
-    depth: int = 2,                 # tree mode: max directory depth
-    compare_to: str = "",           # diff mode: path or snapshot timestamp to diff against
-    changed_since: str = "",        # meta mode: ISO timestamp — returns changed bool
+    path: str,  # absolute path to file or directory
+    mode: str = "auto",  # "content"|"tree"|"meta"|"diff"|"auto"
+    start_line: int = 0,  # content mode: first line (0-indexed)
+    end_line: int = 100,  # content mode: last line exclusive
+    depth: int = 2,  # tree mode: max directory depth
+    compare_to: str = "",  # diff mode: path or snapshot timestamp to diff against
+    changed_since: str = "",  # meta mode: ISO timestamp — returns changed bool
 ) -> dict:
     """Read file content, tree, metadata, or diff. Bounded always."""
 ```
@@ -354,11 +366,17 @@ Used by other MCP servers to detect stale state before patching.
 ### Tool 3 — fs_write (PATCH)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False,
-                        "idempotentHint": False, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
 def fs_write(
-    ops: list[dict],                # array of operations — see op table below
-    dry_run: bool = False,          # preview without executing
+    ops: list[dict],  # array of operations — see op table below
+    dry_run: bool = False,  # preview without executing
 ) -> dict:
     """Write, edit, move, copy, rename files. Delete requires confirmation token."""
 ```
@@ -435,12 +453,18 @@ def fs_write(
 ### Tool 4 — fs_index (VERIFY / INDEX)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False,
-                        "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
 def fs_index(
-    action: str = "query",          # "build"|"query"|"stats"|"clear"|"receipt"
-    path: str = "",                 # directory to index / query / clear
-    pattern: str = "",              # for action="query": filename pattern
+    action: str = "query",  # "build"|"query"|"stats"|"clear"|"receipt"
+    path: str = "",  # directory to index / query / clear
+    pattern: str = "",  # for action="query": filename pattern
     max_results: int = 50,
 ) -> dict:
     """Build/query file index or read operation receipt history."""
@@ -489,10 +513,16 @@ def fs_index(
 ### Tool 5 — fs_manage (METADATA / SYSTEM)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False,
-                        "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
 def fs_manage(
-    action: str,                    # "disk_usage"|"permissions"|"symlink_info"|"versions"
+    action: str,  # "disk_usage"|"permissions"|"symlink_info"|"versions"
     path: str = "",
 ) -> dict:
     """Disk usage, permissions, symlink info, or snapshot version list."""
@@ -512,13 +542,19 @@ with `set_permissions` op (requires explicit user intent via the write tool).
 ### Tool 6 — fs_archive (ARCHIVE OPS)
 
 ```python
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False,
-                        "idempotentHint": False, "openWorldHint": False})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
 def fs_archive(
-    action: str,                    # "create"|"extract"|"list"
-    path: str,                      # archive file path
-    target: str = "",               # for create: source dir/files; for extract: output dir
-    format_: str = "zip",           # "zip"|"tar.gz"
+    action: str,  # "create"|"extract"|"list"
+    path: str,  # archive file path
+    target: str = "",  # for create: source dir/files; for extract: output dir
+    format_: str = "zip",  # "zip"|"tar.gz"
     dry_run: bool = False,
 ) -> dict:
     """Create or extract zip/tar.gz archives. Uses Python stdlib only."""
@@ -581,11 +617,14 @@ Phase 1's output and instruct the LLM to proceed.
 # In-memory dict — cleared on server restart
 _store: dict[str, dict] = {}
 
+
 def create_token(targets: list[dict]) -> str:
     """Generate token, store with expiry. Returns token string."""
 
+
 def validate_token(token: str) -> dict | None:
     """Returns token data if valid and unexpired, else None. Consumes on use."""
+
 
 def cleanup_expired() -> None:
     """Remove expired tokens. Called on every fs_write invocation."""
@@ -715,7 +754,7 @@ def cleanup_expired() -> None
 
 First line of every engine function operating on a file path:
 ```python
-path = resolve_path(file_path)          # raises ValueError if outside home
+path = resolve_path(file_path)  # raises ValueError if outside home
 ```
 
 `resolve_path` rejects:
@@ -730,7 +769,10 @@ All subprocess calls use argument lists, `shell=False`, and `timeout`:
 # Correct
 result = subprocess.run(
     ["rg", "--line-number", pattern, str(path)],
-    shell=False, capture_output=True, timeout=30, text=True,
+    shell=False,
+    capture_output=True,
+    timeout=30,
+    text=True,
 )
 
 # Never
@@ -809,6 +851,7 @@ print("Scanning files...")
 
 # Correct — stderr only
 import logging, sys
+
 logger = logging.getLogger(__name__)
 logger.debug("Scanning files...")
 ```
@@ -819,9 +862,8 @@ logger.debug("Scanning files...")
 
 ```python
 import tempfile, shutil
-with tempfile.NamedTemporaryFile(
-    delete=False, dir=path.parent, suffix=path.suffix
-) as tmp:
+
+with tempfile.NamedTemporaryFile(delete=False, dir=path.parent, suffix=path.suffix) as tmp:
     tmp.write(content.encode("utf-8"))
     tmp_path = tmp.name
 shutil.move(tmp_path, path)
