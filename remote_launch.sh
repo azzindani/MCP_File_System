@@ -42,7 +42,9 @@ sleep 1
 
 cd "$REPO_DIR"
 echo "[remote_launch] starting mcp-filesystem (fs_basic) on :${PORT}..."
-nohup uv run python servers/fs_basic/server.py --transport http --host 0.0.0.0 --port "$PORT" > "$LOG_DIR/server.log" 2>&1 &
+# FS_HOST/FS_PORT are read at import time (module-level FastMCP(...) call),
+# not CLI flags — this server's main() only takes --transport.
+FS_HOST=0.0.0.0 FS_PORT="$PORT" nohup uv run python servers/fs_basic/server.py --transport http > "$LOG_DIR/server.log" 2>&1 &
 
 for i in $(seq 1 30); do
   curl -fsS "http://localhost:${PORT}/health" >/dev/null 2>&1 && break
