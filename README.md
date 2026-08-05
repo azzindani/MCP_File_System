@@ -390,6 +390,20 @@ Not for production: Quick Tunnels are unauthenticated at the transport layer.
 Set `FS_API_KEY` or `FS_TOKENS_FILE` before tunneling so `/mcp` still
 requires a bearer token even while it's publicly reachable.
 
+### Remote smoke test (`remote_smoke_test.sh`)
+
+Not part of pytest/CI — the separate, manual/on-demand check that exercises
+the real deployed HTTP endpoint: auth enforcement plus a real
+handwritten-prompt-style call for **all 6 tools** (`fs_query`, `fs_read`,
+`fs_write`, `fs_index`, `fs_manage`, `fs_archive`), against real seeded files
+in the container. This is what caught the root-owned `/home/app` bug blocking
+`fs_index`'s default index path.
+
+```bash
+./remote_smoke_test.sh                      # reads FS_API_KEY from .env, targets fs.casava.space
+DOMAIN=http://localhost:8801 ./remote_smoke_test.sh   # test a different target
+```
+
 ## Uninstall
 
 **Step 1:** Remove from LM Studio
