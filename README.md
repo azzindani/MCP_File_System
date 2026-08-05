@@ -319,6 +319,68 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 |---|---|---|
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
 
+## Deployment
+
+| Mode | Best for | Transport | Auth |
+|---|---|---|---|
+| **Local stdio** (default, above) | LM Studio / Claude Code on your machine | stdio | none |
+| **Local Docker / HTTP** | Testing, or one other machine on your LAN | HTTP | optional |
+| **VPS Docker** | Remote MCP clients (claude.ai, hosted harnesses) | HTTP | **required** |
+
+fs_basic is **not** read-only (`fs_write`/`fs_archive` can modify the filesystem) —
+bind-mount only the directory tree you want it to manage.
+
+### HTTP transport (no Docker)
+
+```bash
+FS_TRANSPORT=http FS_PORT=8801 uv run python servers/fs_basic/server.py
+curl http://localhost:8801/health   # {"status":"ok","version":"0.1.0"}
+```
+
+### Docker
+
+```bash
+docker compose up -d --build
+curl http://localhost:8801/health
+```
+
+With auth (recommended for any network-reachable deploy):
+
+```bash
+cp tokens.example.json tokens.json   # edit: replace placeholders with `openssl rand -hex 32`
+docker compose up -d --build
+```
+
+`/mcp` requires `Authorization: Bearer <token>` once any of `FS_TOKENS_FILE` /
+`FS_TOKENS` / `FS_API_KEY` is set; `/health` and `/version` stay unauthenticated.
+
+### Deployment environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `FS_TRANSPORT` | `stdio` | `stdio` or `http` |
+| `FS_HOST` | `127.0.0.1` | Bind address for HTTP mode |
+| `FS_PORT` | `8801` | Port for HTTP mode |
+| `FS_TOKENS_FILE` | unset | JSON file of named bearer tokens (`{"name": "token"}`) — highest priority |
+| `FS_TOKENS` | unset | Inline `"name:token,name2:token2"` |
+| `FS_API_KEY` | unset | Single shared bearer token |
+
+### Remote testing (Cloudflare Quick Tunnel)
+
+Same idea as `azzindani/Folio`'s `launch.sh`: bring the Docker deployment up
+and expose it at an ephemeral `*.trycloudflare.com` URL — no VPS, no DNS, no
+account — so it's reachable from any MCP-compatible harness for a quick
+remote smoke test.
+
+```bash
+./launch_tunnel.sh          # docker compose up -d --build, then tunnel
+./launch_tunnel.sh stop     # tear the tunnel down (containers keep running)
+```
+
+Not for production: Quick Tunnels are unauthenticated at the transport layer.
+Set `FS_API_KEY` or `FS_TOKENS_FILE` before tunneling so `/mcp` still
+requires a bearer token even while it's publicly reachable.
+
 ## Uninstall
 
 **Step 1:** Remove from LM Studio

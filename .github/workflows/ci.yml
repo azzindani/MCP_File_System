@@ -50,3 +50,17 @@ jobs:
         env:
           MCP_CONSTRAINED_MODE: "1"
           PYTHONPATH: "."
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        uses: azzindani/MCP_Math/.github/actions/docker-ghcr-publish@main
+        with:
+          image-name: mcp-filesystem-fs-basic
+          push: "false"
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# mcp-filesystem (fs_basic) — local & VPS-friendly compose stack.
+#
+# Quick start (open mode, no auth — localhost/private network only):
+#   docker compose up -d --build
+#   curl http://localhost:8801/health
+#
+# With auth (recommended for any network-reachable deploy):
+#   cp tokens.example.json tokens.json   # edit: replace placeholders
+#   docker compose up -d --build
+#
+# fs_basic is NOT read-only (fs_write/fs_archive can modify the filesystem).
+# Bind-mount only the directory tree you want it to manage.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  fs-basic-mcp:
+    build:
+      context: .
+    image: ${FS_IMAGE:-mcp-filesystem-fs-basic:latest}
+    container_name: mcp-filesystem-fs-basic
+    restart: unless-stopped
+    ports:
+      - "${FS_HOST_PORT:-8801}:8801"
+    environment:
+      FS_TRANSPORT: http
+      FS_HOST: 0.0.0.0
+      FS_PORT: 8801
+      FS_TOKENS_FILE: ${FS_TOKENS_FILE:-}
+      FS_TOKENS: ${FS_TOKENS:-}
+      FS_API_KEY: ${FS_API_KEY:-}
+    mem_limit: ${FS_MEM_LIMIT:-1g}
+    volumes:
+      # Mount tokens.json read-only when FS_TOKENS_FILE is set. Optional —
+      # comment out if you use FS_TOKENS (inline) or FS_API_KEY instead.
+      - ./tokens.json:/home/app/tokens.json:ro
+      # The directory tree fs_basic is allowed to manage. Tool calls must use
+      # paths under this mount (e.g. /data/notes.md).
+      - ./fs-root:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8801/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
