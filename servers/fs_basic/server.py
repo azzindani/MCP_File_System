@@ -1,6 +1,8 @@
 """FastMCP server — 6 thin tool wrappers. All logic lives in engine.py."""
 
+import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -14,10 +16,36 @@ for _p in (str(_root_dir), str(_this_dir)):
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 import engine  # noqa: E402
+from deploy_auth import build_auth  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
 
-mcp = FastMCP("fs_basic")
+_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+_HOST = os.environ.get("FS_HOST", "127.0.0.1")
+_PORT = int(os.environ.get("FS_PORT", "8801"))
+_token_verifier, _auth_settings = build_auth("FS", _HOST, _PORT)
+
+mcp = FastMCP(
+    "fs_basic",
+    host=_HOST,
+    port=_PORT,
+    token_verifier=_token_verifier,
+    auth=_auth_settings,
+)
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request: Request) -> JSONResponse:
+    """Liveness check. Unauthenticated."""
+    return JSONResponse({"status": "ok", "version": _VERSION})
+
+
+@mcp.custom_route("/version", methods=["GET"])
+async def version(request: Request) -> JSONResponse:
+    """Report running version. Unauthenticated."""
+    return JSONResponse({"current": _VERSION})
 
 
 @mcp.tool(
@@ -157,7 +185,18 @@ def fs_archive(
 
 
 def main() -> None:
-    mcp.run()
+    parser = argparse.ArgumentParser(description="File System MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.environ.get("FS_TRANSPORT", "stdio"),
+    )
+    args = parser.parse_args()
+
+    if args.transport == "http":
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

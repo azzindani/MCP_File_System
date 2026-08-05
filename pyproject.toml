@@ -10,7 +10,7 @@ license = { text = "MIT" }
 members = ["servers/fs_basic"]
 
 [dependency-groups]
-dev = ["mcp>=1.0.0", "pyright>=1.1", "ruff>=0.4", "pytest>=8"]
+dev = ["mcp>=1.0.0,<2.0", "pyright>=1.1", "ruff>=0.4", "pytest>=8"]
 
 [build-system]
 requires = ["hatchling"]
