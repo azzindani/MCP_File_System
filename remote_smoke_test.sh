@@ -50,7 +50,7 @@ CONTENT="# Remote smoke test\n\nWritten by remote_smoke_test.sh over $DOMAIN.\n"
 RESULT=$(curl -s -X POST "$DOMAIN/mcp" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -H "Authorization: Bearer $KEY" -H "mcp-session-id: $SID" \
   -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"fs_write\",\"arguments\":{\"ops\":[{\"op\":\"write_file\",\"path\":\"$TEST_PATH\",\"content\":\"$CONTENT\"}]}}}")
-echo "$RESULT" | grep -q '"isError":false' && pass "fs_write created a real file on the host" || fail "unexpected result: $RESULT"
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_write created a real file on the host" || fail "unexpected result: $RESULT"
 
 echo
 echo "== prompt: \"read it back\" -> fs_read =="
@@ -59,5 +59,37 @@ RESULT=$(curl -s -X POST "$DOMAIN/mcp" -H 'Content-Type: application/json' -H 'A
   -d "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"fs_read\",\"arguments\":{\"path\":\"$TEST_PATH\"}}}")
 echo "$RESULT" | grep -qi 'Remote smoke test' && pass "fs_read read the real file back correctly" || fail "unexpected result: $RESULT"
 
+call() {
+  local id="$1" name="$2" args="$3"
+  curl -s -X POST "$DOMAIN/mcp" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -H "Authorization: Bearer $KEY" -H "mcp-session-id: $SID" \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"tools/call\",\"params\":{\"name\":\"$name\",\"arguments\":$args}}"
+}
+
 echo
-echo "ALL CHECKS PASSED against $DOMAIN"
+echo "== prompt: \"find the word 'smoke' inside /tmp/remote-smoke-test\" -> fs_query (grep mode) =="
+RESULT=$(call 5 fs_query '{"pattern":"*","path":"/tmp/remote-smoke-test","content":"smoke","grep_mode":true}')
+echo "$RESULT" | grep -qi 'notes.md' && pass "fs_query grep-mode found the real match inside notes.md" || fail "unexpected result: $RESULT"
+
+echo
+echo "== prompt: \"build a search index of /tmp/remote-smoke-test\" -> fs_index (build) =="
+RESULT=$(call 6 fs_index '{"action":"build","path":"/tmp/remote-smoke-test"}')
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_index built a real index over the real directory" || fail "unexpected result: $RESULT"
+
+echo
+echo "== prompt: \"query that index for notes.md\" -> fs_index (query) =="
+RESULT=$(call 7 fs_index '{"action":"query","path":"/tmp/remote-smoke-test","pattern":"notes.md"}')
+echo "$RESULT" | grep -qi 'notes.md' && pass "fs_index query found the real indexed file" || fail "unexpected result: $RESULT"
+
+echo
+echo "== prompt: \"how much disk space is that file using?\" -> fs_manage (disk_usage) =="
+RESULT=$(call 8 fs_manage "{\"action\":\"disk_usage\",\"path\":\"$TEST_PATH\"}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_manage(disk_usage) reported real size info for the real file" || fail "unexpected result: $RESULT"
+
+echo
+echo "== prompt: \"zip up /tmp/remote-smoke-test\" -> fs_archive (create) =="
+RESULT=$(call 9 fs_archive '{"action":"create","path":"/tmp/remote-smoke-test-archive.zip","target":"/tmp/remote-smoke-test","format_":"zip"}')
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_archive created a real .zip on the host" || fail "unexpected result: $RESULT"
+
+echo
+echo "ALL 6 TOOLS PASSED against $DOMAIN"
