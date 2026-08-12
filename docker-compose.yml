@@ -28,6 +28,12 @@ services:
       FS_TOKENS_FILE: ${FS_TOKENS_FILE:-}
       FS_TOKENS: ${FS_TOKENS:-}
       FS_API_KEY: ${FS_API_KEY:-}
+      # OAuth 2.0 bridge for clients that require it (e.g. claude.ai's Custom
+      # Connector) instead of a plain bearer header — see oauth_bridge.py.
+      # Only takes effect when a token source above is set; harmless otherwise.
+      FS_OAUTH_STATE_DIR: /home/app/.oauth-state
+      FS_OAUTH_CLIENT_ID: ${FS_OAUTH_CLIENT_ID:-}
+      FS_OAUTH_CLIENT_SECRET: ${FS_OAUTH_CLIENT_SECRET:-}
     mem_limit: ${FS_MEM_LIMIT:-1g}
     volumes:
       # Mount tokens.json read-only when FS_TOKENS_FILE is set. Optional —
@@ -36,6 +42,11 @@ services:
       # The directory tree fs_basic is allowed to manage. Tool calls must use
       # paths under this mount (e.g. /data/notes.md).
       - ./fs-root:/data
+      # Persists OAuth-issued access/refresh tokens so a container restart
+      # doesn't force claude.ai to reauthorize. `mkdir -p oauth-state && chown
+      # 999:999 oauth-state` before first run (left root-owned, the
+      # container's non-root user can't write to it).
+      - ./oauth-state:/home/app/.oauth-state
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8801/health', timeout=3)"]
       interval: 30s
