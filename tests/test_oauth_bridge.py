@@ -106,8 +106,16 @@ class TestMetadata:
                 Mount(
                     "/basic",
                     routes=[
-                        Route("/.well-known/oauth-authorization-server", bridge.metadata, methods=["GET"]),
-                        Route("/.well-known/oauth-protected-resource", bridge.protected_resource, methods=["GET"]),
+                        Route(
+                            "/.well-known/oauth-authorization-server",
+                            bridge.metadata,
+                            methods=["GET"],
+                        ),
+                        Route(
+                            "/.well-known/oauth-protected-resource",
+                            bridge.protected_resource,
+                            methods=["GET"],
+                        ),
                         Route("/oauth/authorize", bridge.authorize_get, methods=["GET"]),
                     ],
                 )
@@ -128,7 +136,11 @@ class TestMetadata:
         # unmounted root, or submitting it 404s.
         form_resp = client.get(
             "/basic/oauth/authorize",
-            params={"client_id": "x", "redirect_uri": "https://claude.ai/cb", "response_type": "code"},
+            params={
+                "client_id": "x",
+                "redirect_uri": "https://claude.ai/cb",
+                "response_type": "code",
+            },
         )
         assert 'action="http://testserver/basic/oauth/authorize"' in form_resp.text
 
