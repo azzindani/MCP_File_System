@@ -48,11 +48,14 @@ LookupPrincipal = Callable[[str], "str | None"]
 class OAuthBridge:
     """One instance per running server process. Call register_routes(mcp) to mount."""
 
-    def __init__(self, prefix: str, lookup_principal: LookupPrincipal, state_dir: str | None = None) -> None:
+    def __init__(
+        self, prefix: str, lookup_principal: LookupPrincipal, state_dir: str | None = None
+    ) -> None:
         self._prefix = prefix
         self._lookup_principal = lookup_principal
         self._state_dir = Path(
-            state_dir or os.environ.get(f"{prefix}_OAUTH_STATE_DIR", f"/tmp/{prefix.lower()}-oauth-state")
+            state_dir
+            or os.environ.get(f"{prefix}_OAUTH_STATE_DIR", f"/tmp/{prefix.lower()}-oauth-state")
         )
         self._tokens_file = self._state_dir / "access-tokens.json"
         self._refresh_file = self._state_dir / "refresh-tokens.json"
@@ -111,7 +114,8 @@ class OAuthBridge:
         for cid in [
             c
             for c in self._clients
-            if c != self._static_client_id and now - self._clients[c]["created_at"] > REGISTERED_CLIENT_TTL_S
+            if c != self._static_client_id
+            and now - self._clients[c]["created_at"] > REGISTERED_CLIENT_TTL_S
         ]:
             del self._clients[cid]
         if len(self._clients) > REGISTERED_CLIENT_MAX:
@@ -156,18 +160,26 @@ class OAuthBridge:
         action) must include it, or the client ends up following a path that
         only exists at the unmounted root and 404s.
         """
-        proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip() or request.url.scheme
+        proto = (
+            request.headers.get("x-forwarded-proto", "").split(",")[0].strip() or request.url.scheme
+        )
         host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost"
         root_path = request.scope.get("root_path", "")
         return f"{proto}://{host}{root_path}"
 
     def _issue_token_pair(self, principal: str, scope: str) -> dict:
         access_token = self._random_token()
-        self._access_tokens[access_token] = {"principal": principal, "expires_at": time.time() + ACCESS_TOKEN_TTL_S}
+        self._access_tokens[access_token] = {
+            "principal": principal,
+            "expires_at": time.time() + ACCESS_TOKEN_TTL_S,
+        }
         self._persist(self._access_tokens, self._tokens_file)
 
         refresh_token = self._random_token()
-        self._refresh_tokens[refresh_token] = {"principal": principal, "expires_at": time.time() + REFRESH_TOKEN_TTL_S}
+        self._refresh_tokens[refresh_token] = {
+            "principal": principal,
+            "expires_at": time.time() + REFRESH_TOKEN_TTL_S,
+        }
         self._persist(self._refresh_tokens, self._refresh_file)
 
         return {
@@ -191,7 +203,11 @@ class OAuthBridge:
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "code_challenge_methods_supported": ["S256"],
-                "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
+                "token_endpoint_auth_methods_supported": [
+                    "none",
+                    "client_secret_post",
+                    "client_secret_basic",
+                ],
                 "scopes_supported": ["mcp"],
             }
         )
@@ -212,7 +228,9 @@ class OAuthBridge:
             body = await request.json()
         except Exception:
             body = {}
-        redirect_uris = body.get("redirect_uris") if isinstance(body.get("redirect_uris"), list) else ["*"]
+        redirect_uris = (
+            body.get("redirect_uris") if isinstance(body.get("redirect_uris"), list) else ["*"]
+        )
         client_id = f"{self._prefix.lower()}-{self._random_token(8)}"
         wants_secret = body.get("token_endpoint_auth_method") not in (None, "none")
         client_secret = self._random_token() if wants_secret else None
@@ -237,11 +255,13 @@ class OAuthBridge:
         for k in ("client_id", "redirect_uri", "response_type"):
             if not q.get(k):
                 return HTMLResponse(
-                    f"<h1>Bad request</h1><p>Missing <code>{html.escape(k)}</code>.</p>", status_code=400
+                    f"<h1>Bad request</h1><p>Missing <code>{html.escape(k)}</code>.</p>",
+                    status_code=400,
                 )
         if q.get("response_type") != "code":
             return HTMLResponse(
-                "<h1>Bad request</h1><p>Only <code>response_type=code</code> is supported.</p>", status_code=400
+                "<h1>Bad request</h1><p>Only <code>response_type=code</code> is supported.</p>",
+                status_code=400,
             )
 
         hidden_fields = (
@@ -289,7 +309,8 @@ class OAuthBridge:
         principal = self._lookup_principal(api_key)
         if not principal:
             return HTMLResponse(
-                '<h1>Invalid API key</h1><p><a href="javascript:history.back()">Go back</a></p>', status_code=401
+                '<h1>Invalid API key</h1><p><a href="javascript:history.back()">Go back</a></p>',
+                status_code=401,
             )
 
         client_id = str(form.get("client_id", ""))
@@ -297,7 +318,8 @@ class OAuthBridge:
         client = self._clients.get(client_id)
         if not client:
             return HTMLResponse(
-                "<h1>Unknown client_id</h1><p>Register first via <code>/oauth/register</code>.</p>", status_code=400
+                "<h1>Unknown client_id</h1><p>Register first via <code>/oauth/register</code>.</p>",
+                status_code=400,
             )
         if "*" not in client["redirect_uris"] and redirect_uri not in client["redirect_uris"]:
             return HTMLResponse("<h1>Invalid redirect_uri</h1>", status_code=400)
@@ -330,11 +352,16 @@ class OAuthBridge:
                 self._refresh_tokens.pop(presented, None)
                 self._persist(self._refresh_tokens, self._refresh_file)
                 return JSONResponse(
-                    {"error": "invalid_grant", "error_description": "Refresh token is missing, expired, or revoked."},
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "Refresh token is missing, expired, or revoked.",
+                    },
                     status_code=400,
                 )
             del self._refresh_tokens[presented]
-            return JSONResponse(self._issue_token_pair(rec["principal"], str(form.get("scope") or "mcp")))
+            return JSONResponse(
+                self._issue_token_pair(rec["principal"], str(form.get("scope") or "mcp"))
+            )
 
         if grant != "authorization_code":
             return JSONResponse(
@@ -350,21 +377,26 @@ class OAuthBridge:
         if not record or record["expires_at"] < time.time():
             self._auth_codes.pop(code, None)
             return JSONResponse(
-                {"error": "invalid_grant", "error_description": "Auth code is missing, expired, or already used."},
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Auth code is missing, expired, or already used.",
+                },
                 status_code=400,
             )
         del self._auth_codes[code]  # one-shot: delete on first read regardless of outcome
 
         if form.get("redirect_uri") != record["redirect_uri"]:
             return JSONResponse(
-                {"error": "invalid_grant", "error_description": "redirect_uri mismatch."}, status_code=400
+                {"error": "invalid_grant", "error_description": "redirect_uri mismatch."},
+                status_code=400,
             )
 
         client = self._clients.get(record["client_id"])
         if client and client.get("client_secret"):
             if form.get("client_secret") != client["client_secret"]:
                 return JSONResponse(
-                    {"error": "invalid_client", "error_description": "client_secret mismatch."}, status_code=401
+                    {"error": "invalid_client", "error_description": "client_secret mismatch."},
+                    status_code=401,
                 )
 
         if record.get("code_challenge"):
@@ -373,15 +405,20 @@ class OAuthBridge:
             computed = self._sha256_b64url(verifier) if method == "S256" else verifier
             if computed != record["code_challenge"]:
                 return JSONResponse(
-                    {"error": "invalid_grant", "error_description": "PKCE code_verifier mismatch."}, status_code=400
+                    {"error": "invalid_grant", "error_description": "PKCE code_verifier mismatch."},
+                    status_code=400,
                 )
 
-        return JSONResponse(self._issue_token_pair(record["principal"], record.get("scope") or "mcp"))
+        return JSONResponse(
+            self._issue_token_pair(record["principal"], record.get("scope") or "mcp")
+        )
 
     def register_routes(self, mcp) -> None:
         """Mount all 6 OAuth endpoints via mcp.custom_route. Call once at server startup."""
         mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])(self.metadata)
-        mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])(self.protected_resource)
+        mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])(
+            self.protected_resource
+        )
         mcp.custom_route("/oauth/register", methods=["POST"])(self.register)
         mcp.custom_route("/oauth/authorize", methods=["GET"])(self.authorize_get)
         mcp.custom_route("/oauth/authorize", methods=["POST"])(self.authorize_post)
