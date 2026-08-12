@@ -16,16 +16,17 @@ for _p in (str(_root_dir), str(_this_dir)):
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 import engine  # noqa: E402
-from deploy_auth import build_auth  # noqa: E402
+from deploy_auth import build_auth, build_oauth_bridge  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 
-_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("FS_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("FS_PORT", "8801"))
-_token_verifier, _auth_settings = build_auth("FS", _HOST, _PORT)
+_oauth_bridge = build_oauth_bridge("FS")
+_token_verifier, _auth_settings = build_auth("FS", _HOST, _PORT, _oauth_bridge)
 
 mcp = FastMCP(
     "fs_basic",
@@ -34,6 +35,8 @@ mcp = FastMCP(
     token_verifier=_token_verifier,
     auth=_auth_settings,
 )
+if _oauth_bridge is not None:
+    _oauth_bridge.register_routes(mcp)
 
 
 @mcp.custom_route("/health", methods=["GET"])
