@@ -362,7 +362,7 @@ def _build_grep_response(
     """Build grep_mode=True response."""
     if content_backend == "ripgrep":
         rg_results = _rg_grep(root, content, context_lines, is_regex, name_matches)
-        matches_out: list[dict] = []
+        all_entries: list[dict] = []
         for file_path, hits in rg_results.items():
             if hits:
                 entry: dict = {"path": file_path, "hits": hits}
@@ -371,13 +371,14 @@ def _build_grep_response(
                         entry.update(_with_meta(Path(file_path)))
                     except Exception:
                         pass
-                matches_out.append(entry)
-                if len(matches_out) >= effective_max:
-                    break
+                all_entries.append(entry)
+        truncated = len(all_entries) > effective_max
+        matches_out = all_entries[:effective_max]
     else:
         content_backend = "python"
         matches_out = []
-        for file_path in name_matches:
+        truncated = False
+        for idx, file_path in enumerate(name_matches):
             if not file_path.is_file():
                 continue
             hits = _python_grep(file_path, content, context_lines, is_regex)
@@ -390,10 +391,11 @@ def _build_grep_response(
                         pass
                 matches_out.append(entry)
                 if len(matches_out) >= effective_max:
+                    # More unscanned files remain -> there may be more matches.
+                    truncated = idx < len(name_matches) - 1
                     break
 
     total = len(matches_out)
-    truncated = total >= effective_max
     progress.append(ok(f"grep found {total} file(s) with matches"))
 
     result: dict = {

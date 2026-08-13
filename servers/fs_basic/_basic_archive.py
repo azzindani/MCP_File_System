@@ -161,7 +161,8 @@ def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dic
         return _error(
             "fs_archive",
             f"{len(conflicts)} file(s) would be overwritten in {out_dir.name}",
-            "Pass overwrite=True or choose a different target directory.",
+            "Extract to an empty or different target directory, or remove the "
+            "conflicting files first — fs_archive never overwrites existing files.",
             {"conflicts": conflicts[:10]},
         )
 
@@ -213,7 +214,8 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
         return _error(
             "fs_archive",
             f"{len(conflicts)} file(s) would be overwritten in {out_dir.name}",
-            "Pass overwrite=True or choose a different target directory.",
+            "Extract to an empty or different target directory, or remove the "
+            "conflicting files first — fs_archive never overwrites existing files.",
             {"conflicts": conflicts[:10]},
         )
 

@@ -61,6 +61,34 @@ class TestFsQuery:
         assert "context_before" in hit0
         assert "context_after" in hit0
 
+    def test_grep_mode_not_truncated_at_exact_file_count(self, work_dir, monkeypatch):
+        # Regression: python-backend grep hitting the cap exactly on the last
+        # scanned file used to be flagged truncated=True with no more matches
+        # actually left to find.
+        monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")  # max_results=10
+        d = work_dir / "grep10"
+        d.mkdir()
+        for i in range(10):
+            (d / f"f{i}.txt").write_text("needle_marker\n")
+        r = engine.fs_query("*.txt", path=str(d), content="needle_marker", grep_mode=True)
+        assert r["success"] is True
+        assert r["backend_used"] == "python"
+        assert r["returned"] == 10
+        assert r["truncated"] is False
+        assert "hint" not in r
+
+    def test_grep_mode_truncates_when_more_matches_exist(self, work_dir, monkeypatch):
+        monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")  # max_results=10
+        d = work_dir / "grep15"
+        d.mkdir()
+        for i in range(15):
+            (d / f"f{i}.txt").write_text("needle_marker\n")
+        r = engine.fs_query("*.txt", path=str(d), content="needle_marker", grep_mode=True)
+        assert r["success"] is True
+        assert r["returned"] == 10
+        assert r["truncated"] is True
+        assert "hint" in r
+
     def test_include_meta_adds_size_mtime_mime(self, simple_dir):
         r = engine.fs_query("*.txt", path=str(simple_dir), include_meta=True)
         assert r["success"] is True
@@ -132,6 +160,19 @@ class TestFsRead:
         assert r["truncated"] is True
         assert "hint" in r
 
+    def test_content_mode_not_truncated_when_end_of_file_reached(self, sample_file, monkeypatch):
+        # Regression: requesting a huge end_line from a nonzero start_line used
+        # to be flagged truncated=True even when the slice reached EOF exactly.
+        monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")  # max_lines=20
+        big = sample_file.parent / "boundary.txt"
+        big.write_text("\n".join(f"line {i}" for i in range(25)) + "\n")
+        r = engine.fs_read(str(big), mode="content", start_line=10, end_line=1000)
+        assert r["success"] is True
+        assert r["end_line"] == 25
+        assert r["total_lines"] == 25
+        assert r["truncated"] is False
+        assert "hint" not in r
+
     def test_tree_mode_respects_depth(self, messy_dir):
         r = engine.fs_read(str(messy_dir), mode="tree", depth=1)
         assert r["success"] is True
@@ -151,6 +192,20 @@ class TestFsRead:
         assert r["success"] is True
         assert r["truncated"] is True
         assert "hint" in r
+
+    def test_tree_mode_not_truncated_at_exact_entry_count(self, work_dir, monkeypatch):
+        # Regression: hitting the cap exactly (no entries left over) used to
+        # be flagged truncated=True even though nothing was actually cut off.
+        monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")  # max_tree_entries=100
+        flat = work_dir / "flat100"
+        flat.mkdir()
+        for i in range(100):
+            (flat / f"file_{i:03d}.txt").write_text("x")
+        r = engine.fs_read(str(flat), mode="tree", depth=1)
+        assert r["success"] is True
+        assert r["returned"] == 100
+        assert r["truncated"] is False
+        assert "hint" not in r
 
     def test_meta_mode_returns_metadata(self, sample_file):
         r = engine.fs_read(str(sample_file), mode="meta")
@@ -703,6 +758,23 @@ class TestFsArchive:
         r = engine.fs_archive(action="extract", path=str(arc), target=str(out))
         assert r["success"] is False
         assert "conflicts" in r
+        # fs_archive has no overwrite parameter — the hint must not tell the
+        # caller to pass one.
+        assert "overwrite=True" not in r["hint"]
+
+    def test_extract_targz_conflict_hint_has_no_fake_param(self, work_dir):
+        src = work_dir / "targz_conflict_src"
+        src.mkdir()
+        (src / "conflict.txt").write_text("original")
+        arc = work_dir / "conflict.tar.gz"
+        engine.fs_archive(action="create", path=str(arc), target=str(src), format_="tar.gz")
+        out = work_dir / "targz_conflict_out"
+        (out / "targz_conflict_src" / "conflict.txt").parent.mkdir(parents=True, exist_ok=True)
+        (out / "targz_conflict_src" / "conflict.txt").write_text("existing")
+        r = engine.fs_archive(action="extract", path=str(arc), target=str(out))
+        assert r["success"] is False
+        assert "conflicts" in r
+        assert "overwrite=True" not in r["hint"]
 
     def test_dry_run_create_no_file(self, work_dir):
         src = work_dir / "dry_zip_src"
