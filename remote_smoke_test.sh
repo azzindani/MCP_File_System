@@ -92,4 +92,72 @@ RESULT=$(call 9 fs_archive '{"action":"create","path":"/tmp/remote-smoke-test-ar
 echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_archive created a real .zip on the host" || fail "unexpected result: $RESULT"
 
 echo
-echo "ALL 6 TOOLS PASSED against $DOMAIN"
+echo "===== boundary regression: truncated must be exact at the result-cap, not off-by-one ====="
+echo "A prior bug computed 'truncated' from a count already capped during collection,"
+echo "which is a false positive exactly when the true count equals the cap. Verified"
+echo "here against the real deployed endpoint by hitting the cap exactly, then by one."
+
+echo
+echo "== read (content mode): exactly max_lines vs. one over =="
+CONTENT_100=$(python3 -c "
+import json
+print(json.dumps(''.join(f'line {i}\n' for i in range(1, 101))))
+")
+RESULT=$(call 20 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"/tmp/remote-smoke-test/boundary_100.txt\",\"content\":$CONTENT_100}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "wrote a real 100-line file" || fail "unexpected result: $RESULT"
+RESULT=$(call 21 fs_read '{"path":"/tmp/remote-smoke-test/boundary_100.txt"}')
+echo "$RESULT" | grep -Eq '\\?"total_lines\\?":[[:space:]]*100' || fail "expected a 100-line file, got: $RESULT"
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*false' && pass "reading exactly 100 lines (the max_lines cap) is NOT flagged truncated" || fail "false positive at exact cap: $RESULT"
+
+CONTENT_101=$(python3 -c "
+import json
+print(json.dumps(''.join(f'line {i}\n' for i in range(1, 102))))
+")
+RESULT=$(call 22 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"/tmp/remote-smoke-test/boundary_101.txt\",\"content\":$CONTENT_101}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "wrote a real 101-line file" || fail "unexpected result: $RESULT"
+RESULT=$(call 23 fs_read '{"path":"/tmp/remote-smoke-test/boundary_101.txt"}')
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "reading a 101-line file (1 over the cap) IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
+
+echo
+echo "== read (tree mode): exactly max_tree_entries vs. one over =="
+TREE_DIR="/tmp/remote-smoke-test/tree_boundary"
+for batch in 0 1 2 3 4; do
+  OPS=$(python3 -c "
+import json
+b = $batch
+ops = [{'op': 'write_file', 'path': f'$TREE_DIR/f{b*50+i:04d}.txt', 'content': ''} for i in range(50)]
+print(json.dumps(ops))
+")
+  RESULT=$(call $((30 + batch)) fs_write "{\"ops\":$OPS}")
+  echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' || fail "batch $batch file creation failed: $RESULT"
+done
+pass "created 250 real files under $TREE_DIR (write_file also snapshots a .mcp_receipt.json per file, so 250 files = 500 tree entries)"
+RESULT=$(call 41 fs_read "{\"path\":\"$TREE_DIR\",\"mode\":\"tree\",\"depth\":1}")
+echo "$RESULT" | grep -Eq '\\?"returned\\?":[[:space:]]*500' || fail "expected 500 entries returned, got: $RESULT"
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*false' && pass "tree of exactly 500 entries (the max_tree_entries cap) is NOT flagged truncated" || fail "false positive at exact cap: $RESULT"
+
+RESULT=$(call 42 fs_write "{\"ops\":[{\"op\":\"create_dir\",\"path\":\"$TREE_DIR/extra_dir\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' || fail "501st entry (extra dir, no receipt) creation failed: $RESULT"
+RESULT=$(call 43 fs_read "{\"path\":\"$TREE_DIR\",\"mode\":\"tree\",\"depth\":1}")
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "tree of 501 entries (1 over the cap) IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
+
+echo
+echo "== fs_query (grep mode): exactly max_results vs. one over =="
+GREP_DIR="/tmp/remote-smoke-test/grep_boundary"
+OPS=$(python3 -c "
+import json
+ops = [{'op': 'write_file', 'path': f'$GREP_DIR/m{i}.txt', 'content': 'boundarytoken'} for i in range(5)]
+print(json.dumps(ops))
+")
+RESULT=$(call 50 fs_write "{\"ops\":$OPS}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "created 5 real files containing the grep target string" || fail "$RESULT"
+RESULT=$(call 51 fs_query "{\"pattern\":\"*\",\"path\":\"$GREP_DIR\",\"content\":\"boundarytoken\",\"grep_mode\":true,\"max_results\":5}")
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*false' && pass "grep matching exactly 5 files (max_results=5) is NOT flagged truncated" || fail "false positive at exact cap: $RESULT"
+
+RESULT=$(call 52 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"$GREP_DIR/m5.txt\",\"content\":\"boundarytoken\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' || fail "6th file creation failed: $RESULT"
+RESULT=$(call 53 fs_query "{\"pattern\":\"*\",\"path\":\"$GREP_DIR\",\"content\":\"boundarytoken\",\"grep_mode\":true,\"max_results\":5}")
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "grep matching 6 files with max_results=5 IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
+
+echo
+echo "ALL 6 TOOLS + boundary regression PASSED against $DOMAIN"
