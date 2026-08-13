@@ -147,7 +147,7 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
     s = max(0, start_line)
     e = min(end_line, s + max_lines, total_lines)
     sliced = all_lines[s:e]
-    truncated = e < total_lines or s > 0 and end_line > s + max_lines
+    truncated = e < total_lines
 
     result: dict = {
         "success": True,
@@ -184,9 +184,10 @@ def _read_tree(path: Path, depth: int) -> dict:
     max_depth = max(1, min(depth, get_max_depth()))
     max_entries = get_max_tree_entries()
     entries: list[dict] = []
-    truncated = False
-    _collect_tree(path, path, 0, max_depth, entries, max_entries)
-    truncated = len(entries) >= max_entries
+    _collect_tree(path, path, 0, max_depth, entries, max_entries + 1)
+    truncated = len(entries) > max_entries
+    if truncated:
+        entries = entries[:max_entries]
 
     result: dict = {
         "success": True,
