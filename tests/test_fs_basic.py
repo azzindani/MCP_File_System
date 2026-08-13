@@ -317,6 +317,53 @@ class TestFsWriteBasicOps:
         assert r["success"] is True
         assert target.is_dir()
 
+    def test_write_file_base64_writes_real_binary(self, work_dir):
+        import base64
+
+        raw = bytes(range(256))  # non-UTF8-safe bytes, proves this isn't text-decoded
+        p = work_dir / "binary.bin"
+        r = engine.fs_write(
+            [
+                {
+                    "op": "write_file",
+                    "path": str(p),
+                    "content": base64.b64encode(raw).decode("ascii"),
+                    "content_encoding": "base64",
+                }
+            ]
+        )
+        assert r["success"] is True
+        assert p.read_bytes() == raw
+
+    def test_write_file_base64_invalid_content_rejected(self, work_dir):
+        p = work_dir / "bad.bin"
+        r = engine.fs_write(
+            [
+                {
+                    "op": "write_file",
+                    "path": str(p),
+                    "content": "not valid base64 !!!",
+                    "content_encoding": "base64",
+                }
+            ]
+        )
+        assert r["success"] is False
+        assert not p.exists()
+
+    def test_write_file_unknown_content_encoding_rejected(self, work_dir):
+        p = work_dir / "unknown.txt"
+        r = engine.fs_write(
+            [{"op": "write_file", "path": str(p), "content": "hi", "content_encoding": "utf-16"}]
+        )
+        assert r["success"] is False
+        assert not p.exists()
+
+    def test_write_file_default_encoding_still_text(self, work_dir):
+        p = work_dir / "plain.txt"
+        r = engine.fs_write([{"op": "write_file", "path": str(p), "content": "hello\n"}])
+        assert r["success"] is True
+        assert p.read_text() == "hello\n"
+
     def test_move_src_gone_dst_correct(self, work_dir):
         src = work_dir / "src.txt"
         dst = work_dir / "dst.txt"

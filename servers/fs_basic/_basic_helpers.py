@@ -16,7 +16,12 @@ for _p in (str(_root_dir), str(_this_dir)):
         sys.path.insert(0, _p)
 
 from shared.confirm_store import cleanup_expired, create_token, validate_token  # noqa: E402
-from shared.file_utils import atomic_write, get_default_output_dir, resolve_path  # noqa: E402
+from shared.file_utils import (  # noqa: E402
+    atomic_write,
+    atomic_write_bytes,
+    get_default_output_dir,
+    resolve_path,
+)
 from shared.patch_validator import ALLOWED_OPS, validate_ops  # noqa: E402
 from shared.platform_utils import (  # noqa: E402
     get_content_backend,
@@ -60,6 +65,7 @@ __all__ = [
     "create_token",
     "validate_token",
     "atomic_write",
+    "atomic_write_bytes",
     "get_default_output_dir",
     "resolve_path",
     "ALLOWED_OPS",

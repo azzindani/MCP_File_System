@@ -1,5 +1,7 @@
 """fs_write implementation — PATCH files with two-phase deletion gate."""
 
+import base64
+import binascii
 import re
 import shutil
 import sys
@@ -9,6 +11,7 @@ from _basic_helpers import (
     _error,
     append_receipt,
     atomic_write,
+    atomic_write_bytes,
     cleanup_expired,
     create_token,
     info,
@@ -234,6 +237,15 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
 def _op_write_file(op_dict: dict, dry_run: bool) -> dict:
     path = resolve_path(op_dict["path"])
     content: str = op_dict["content"]
+    encoding = op_dict.get("content_encoding", "text")
+    if encoding not in ("text", "base64"):
+        raise ValueError(f"content_encoding must be 'text' or 'base64', got {encoding!r}")
+    binary: bytes | None = None
+    if encoding == "base64":
+        try:
+            binary = base64.b64decode(content, validate=True)
+        except binascii.Error as exc:
+            raise ValueError(f"content is not valid base64: {exc}") from exc
     backup: str | None = None
 
     if path.exists():
@@ -251,7 +263,10 @@ def _op_write_file(op_dict: dict, dry_run: bool) -> dict:
         r["token_estimate"] = len(str(r)) // 4
         return r
 
-    atomic_write(path, content)
+    if binary is not None:
+        atomic_write_bytes(path, binary)
+    else:
+        atomic_write(path, content)
     append_receipt(
         str(path), "fs_write", "write_file", "created" if not backup else "overwritten", backup
     )
