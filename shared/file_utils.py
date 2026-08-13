@@ -51,6 +51,20 @@ def atomic_write(path: Path, content: str) -> None:
     shutil.move(tmp_path, path)
 
 
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write binary data to path atomically (temp-file rename)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=path.parent,
+        suffix=path.suffix,
+        mode="wb",
+    ) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    shutil.move(tmp_path, path)
+
+
 def get_default_output_dir(input_path: str | None = None) -> Path:
     """Return input file's parent dir, or ~/Downloads as fallback."""
     if input_path:

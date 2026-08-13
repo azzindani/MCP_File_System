@@ -157,7 +157,7 @@ All write, edit, move, copy, rename, and delete operations. Delete always requir
 
 | Op | Required fields | Snapshot | Notes |
 |---|---|---|---|
-| `write_file` | `path`, `content` | if overwrite | Creates or overwrites |
+| `write_file` | `path`, `content` | if overwrite | Creates or overwrites. Optional `content_encoding`: `text` (default) or `base64` for binary files |
 | `append_file` | `path`, `content` | No | Non-destructive |
 | `create_dir` | `path` | No | Auto-creates parents |
 | `move` | `src`, `dst` | if dst exists | Errors if dst exists |
