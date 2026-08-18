@@ -172,6 +172,7 @@ All write, edit, move, copy, rename, and delete operations. Delete always requir
 | `delete_tree_request` | `path` | No | Phase 1 for directory tree |
 | `delete_tree_confirm` | `token` | Yes | Phase 2 for directory tree |
 | `set_permissions` | `path`, `mode` | No | Linux/macOS only, no-op on Windows |
+| `download` | `url`, `path` | if overwrite | Fetches an http(s) URL to `path`. Requires `MCP_FETCH_URLS=1` |
 
 **Rules:**
 - Max 50 ops per call
@@ -318,6 +319,37 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
+| `MCP_OUTPUT_DIR` | `~/Downloads` | Shared directory other services and the outside world can also see |
+| `MCP_PUBLIC_BASE_URL` | _(unset)_ | Public URL serving `MCP_OUTPUT_DIR`; adds `public_url` to write results |
+| `MCP_FETCH_URLS` | `0` | `1` enables the `download` op in `fs_write` |
+| `MCP_FETCH_ALLOW_PRIVATE` | `0` | `1` permits fetching hosts on private/loopback addresses |
+| `MCP_MAX_FETCH_MB` | `100` | Size cap for a downloaded URL |
+
+### Hybrid local + remote file handling
+
+The same engine serves a local stdio install and a self-hosted HTTP endpoint,
+but over HTTP the caller shares no filesystem with the server: the path it
+just got back means nothing to it, and it may hold a link rather than a file.
+Three opt-in variables close that gap without changing local behaviour — all
+are unset by default:
+
+- **`MCP_OUTPUT_DIR`** — bind-mount a directory here to give this server a
+  patch of filesystem that other services (and a file server) can also see.
+- **`MCP_PUBLIC_BASE_URL`** — the public URL that serves that directory. Any
+  file written there comes back with a `public_url` you can open or pass on.
+- **`MCP_FETCH_URLS=1`** — enables `fs_write`'s `download` op, which fetches
+  an `http(s)` URL to a local path. Hosts resolving to loopback/link-local/
+  private addresses are refused, redirects included, unless
+  `MCP_FETCH_ALLOW_PRIVATE=1`. URL support is a distinct op rather than
+  something `path` accepts everywhere, because in every other op `path` is a
+  *destination* — silently downloading one would be nonsense.
+
+```json
+[{"op": "download", "url": "https://example.com/sales.csv", "path": "/files/sales.csv"}]
+```
+
+`write_file` also takes `content_encoding: "base64"`, so a caller with no
+shared filesystem can push real binary content in as well as pull it out.
 
 ## Deployment
 

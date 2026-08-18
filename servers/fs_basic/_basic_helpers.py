@@ -19,7 +19,10 @@ from shared.confirm_store import cleanup_expired, create_token, validate_token  
 from shared.file_utils import (  # noqa: E402
     atomic_write,
     atomic_write_bytes,
+    attach_public_url,
+    fetch_url,
     get_default_output_dir,
+    is_url,
     resolve_path,
 )
 from shared.patch_validator import ALLOWED_OPS, validate_ops  # noqa: E402
@@ -66,7 +69,10 @@ __all__ = [
     "validate_token",
     "atomic_write",
     "atomic_write_bytes",
+    "attach_public_url",
+    "fetch_url",
     "get_default_output_dir",
+    "is_url",
     "resolve_path",
     "ALLOWED_OPS",
     "validate_ops",

@@ -21,11 +21,13 @@ ALLOWED_OPS: frozenset[str] = frozenset(
         "delete_tree_request",
         "delete_tree_confirm",
         "set_permissions",
+        "download",
     }
 )
 
 _REQUIRED: dict[str, list[str]] = {
     "write_file": ["path", "content"],
+    "download": ["url", "path"],
     "append_file": ["path", "content"],
     "create_dir": ["path"],
     "move": ["src", "dst"],
@@ -55,6 +57,7 @@ _PATH_OPS: frozenset[str] = frozenset(
         "delete_request",
         "delete_tree_request",
         "set_permissions",
+        "download",
     }
 )
 
