@@ -1001,3 +1001,68 @@ class TestReturnValueContract:
         src = work_dir / "ctr_src.txt"
         src.write_text("x")
         self._check_required(engine.fs_archive(action="create", path=str(arc), target=str(src)))
+
+
+# ===========================================================================
+# fs_archive — destination guard
+# ===========================================================================
+
+
+class TestFsArchiveWillNotDestroyTheDestination:
+    """zipfile opens the destination in "w", which truncates whatever is there.
+    `path` is the archive to write and `target` is what goes into it, which is
+    easy to get backwards -- and a coverage sweep did exactly that, replacing a
+    text file with a zip. The file was gone with success:true returned."""
+
+    def test_a_plain_file_destination_is_refused(self, tmp_path):
+        notes = tmp_path / "notes.txt"
+        notes.write_text("important data", encoding="utf-8")
+        payload = tmp_path / "payload.txt"
+        payload.write_text("x", encoding="utf-8")
+
+        result = engine.fs_archive("create", str(notes), target=str(payload))
+
+        assert result["success"] is False
+        assert notes.read_text(encoding="utf-8") == "important data", "destination was destroyed"
+
+    def test_the_hint_explains_the_swapped_arguments(self, tmp_path):
+        notes = tmp_path / "notes.txt"
+        notes.write_text("important data", encoding="utf-8")
+        payload = tmp_path / "payload.txt"
+        payload.write_text("x", encoding="utf-8")
+
+        result = engine.fs_archive("create", str(notes), target=str(payload))
+        assert "target" in result["hint"]
+        assert ".zip" in result["hint"]
+
+    def test_a_directory_destination_is_refused(self, tmp_path):
+        payload = tmp_path / "payload.txt"
+        payload.write_text("x", encoding="utf-8")
+        folder = tmp_path / "somewhere"
+        folder.mkdir()
+
+        result = engine.fs_archive("create", str(folder), target=str(payload))
+        assert result["success"] is False
+        assert folder.is_dir()
+
+    def test_a_fresh_archive_still_works(self, tmp_path):
+        payload = tmp_path / "payload.txt"
+        payload.write_text("x", encoding="utf-8")
+        archive = tmp_path / "out.zip"
+
+        result = engine.fs_archive("create", str(archive), target=str(payload))
+        assert result["success"] is True
+        assert archive.exists()
+
+    def test_replacing_a_real_archive_is_allowed_and_snapshotted(self, tmp_path):
+        """Re-creating an archive over an older copy of itself is the normal
+        case and must not be blocked -- but it is still an overwrite."""
+        payload = tmp_path / "payload.txt"
+        payload.write_text("x", encoding="utf-8")
+        archive = tmp_path / "out.zip"
+
+        engine.fs_archive("create", str(archive), target=str(payload))
+        result = engine.fs_archive("create", str(archive), target=str(payload))
+
+        assert result["success"] is True
+        assert any("snapshot" in str(step).lower() for step in result["progress"])
