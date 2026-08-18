@@ -25,7 +25,7 @@ from shared.exchange import (
     public_url_for,
     url_fetch_enabled,
 )
-from shared.file_utils import get_default_output_dir
+from shared.file_utils import atomic_write_bytes, get_default_output_dir
 from shared.patch_validator import validate_ops
 
 CSV_BODY = b"a,b\n1,2\n3,4\n"
@@ -325,3 +325,11 @@ class TestPublicUrlOnWrites:
         target = tmp_home / "notes.md"
         r = engine.fs_write([{"op": "write_file", "path": str(target), "content": "hello"}])
         assert "public_url" not in r["results"][0]
+
+
+def test_atomic_write_leaves_files_readable_by_others(tmp_path):
+    # A written file only this process can read is useless in a shared
+    # directory — the file server in front of it has to read it too.
+    target = tmp_path / "out.csv"
+    atomic_write_bytes(target, CSV_BODY)
+    assert target.stat().st_mode & 0o044 == 0o044
