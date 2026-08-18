@@ -208,7 +208,9 @@ def _fs_query(
                 "Search without the content filter first to confirm what is there."
             )
         else:
-            result["hint"] = f"Nothing under {root} matches '{pattern}'. Use fs_index to list what is there."
+            result["hint"] = (
+                f"Nothing under {root} matches '{pattern}'. Use fs_index to list what is there."
+            )
     result["token_estimate"] = len(str(result)) // 4
     return result
 
