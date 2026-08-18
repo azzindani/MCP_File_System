@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from shared.exchange import (
+    apply_default_mode,
     attach_public_url,
     fetch_url,
     get_inbox_dir,
@@ -17,6 +18,7 @@ from shared.exchange import (
 )
 
 __all__ = [
+    "apply_default_mode",
     "atomic_write",
     "atomic_write_bytes",
     "attach_public_url",
@@ -62,7 +64,12 @@ def resolve_path(file_path: str, must_exist: bool = False) -> Path:
 
 
 def atomic_write(path: Path, content: str) -> None:
-    """Write content to path atomically (temp-file rename)."""
+    """Write content to path atomically (temp-file rename).
+
+    NamedTemporaryFile creates 0600 and the rename preserves it, which would
+    leave every written file unreadable to anything but this process — wrong
+    for a shared directory, and inconsistent with a plain open() anywhere.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         delete=False,
@@ -73,6 +80,7 @@ def atomic_write(path: Path, content: str) -> None:
     ) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
+    apply_default_mode(tmp_path)
     shutil.move(tmp_path, path)
 
 
@@ -87,6 +95,7 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     ) as tmp:
         tmp.write(data)
         tmp_path = tmp.name
+    apply_default_mode(tmp_path)
     shutil.move(tmp_path, path)
 
 
