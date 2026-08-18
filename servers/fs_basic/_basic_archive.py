@@ -12,6 +12,13 @@ from _basic_helpers import (
     resolve_path,
 )
 
+from shared.version_control import snapshot
+
+# Re-creating an archive over an older copy of itself is the normal case, so
+# these suffixes are replaced without argument. Anything else is a destination
+# the caller almost certainly did not mean to destroy.
+_ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar")
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -94,6 +101,32 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
         }
         result["token_estimate"] = len(str(result)) // 4
         return result
+
+    # zipfile/tarfile open the destination in "w", which truncates whatever is
+    # already there. With no check, `path` pointing at an ordinary file silently
+    # replaced it with a zip -- and `path` is the easy one to get wrong, since
+    # the file being archived goes in `target`. A sweep destroyed a text file
+    # exactly this way. Refuse a non-archive destination, and keep a snapshot
+    # when replacing a real archive.
+    if arc.exists():
+        if arc.is_dir():
+            return _error(
+                "fs_archive",
+                f"Destination is a directory: {arc}",
+                "Pass the archive file path in 'path' and the file or folder to archive in 'target'.",
+            )
+        if not str(arc).lower().endswith(_ARCHIVE_SUFFIXES):
+            return _error(
+                "fs_archive",
+                f"Refusing to overwrite non-archive file: {arc.name}",
+                "'path' is the archive to write and 'target' is what goes into it -- they look "
+                f"swapped here. To archive {arc.name}, pass it as 'target' and give 'path' a "
+                f"name ending in .zip or .tar.gz.",
+            )
+        backup = snapshot(str(arc))
+        progress.append(
+            info(f"Replacing existing archive {arc.name}", f"snapshot {Path(backup).name}")
+        )
 
     arc.parent.mkdir(parents=True, exist_ok=True)
 
