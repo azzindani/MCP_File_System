@@ -69,7 +69,9 @@ def _smoke_test_tokens() -> set[str]:
 
 class TestEveryToolIsExercised:
     def test_the_smoke_test_exists(self):
-        assert SMOKE_TEST.is_file(), f"{SMOKE_TEST.name} is the only end-to-end coverage this repo has"
+        assert SMOKE_TEST.is_file(), (
+            f"{SMOKE_TEST.name} is the only end-to-end coverage this repo has"
+        )
 
     def test_some_tools_were_found(self):
         """A broken enumerator would make every other test here pass vacuously."""
