@@ -12,6 +12,36 @@ import pytest
 # ===========================================================================
 
 
+class TestFsQueryZeroResultHint:
+    """`pattern` is a glob matched against the whole filename, so the substring a
+    caller reaches for ("report") matches nothing while the file sits right there.
+    A real run searched 'test_write' in a directory holding test_write.txt and got
+    `success: true, 0 matches` with nothing to explain it."""
+
+    def test_bare_substring_is_explained(self, simple_dir):
+        stem = sorted(p.stem for p in simple_dir.iterdir())[0]
+        r = engine.fs_query(stem, path=str(simple_dir))
+        assert r["success"] is True
+        assert r["total_found"] == 0
+        assert f"*{stem}*" in r["hint"]
+
+    def test_the_suggested_pattern_actually_works(self, simple_dir):
+        stem = sorted(p.stem for p in simple_dir.iterdir())[0]
+        r = engine.fs_query(f"*{stem}*", path=str(simple_dir))
+        assert r["total_found"] >= 1
+
+    def test_a_real_glob_with_no_matches_gets_a_different_hint(self, simple_dir):
+        r = engine.fs_query("*.nosuchext", path=str(simple_dir))
+        assert r["success"] is True
+        assert r["total_found"] == 0
+        assert "glob, not a substring" not in r["hint"]
+
+    def test_successful_search_carries_no_hint(self, simple_dir):
+        r = engine.fs_query("*.txt", path=str(simple_dir))
+        assert r["total_found"] == 10
+        assert "hint" not in r
+
+
 class TestFsQuery:
     def test_finds_files_by_glob(self, simple_dir):
         r = engine.fs_query("*.txt", path=str(simple_dir))
