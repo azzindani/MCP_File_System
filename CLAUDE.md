@@ -410,6 +410,7 @@ def fs_write(
 | `delete_tree_request` | `path` | — | No | Phase 1 for directory tree |
 | `delete_tree_confirm` | `token` | — | Yes | Phase 2 for directory tree |
 | `set_permissions` | `path`, `mode` | — | No | Linux/macOS only, no-op Windows |
+| `download` | `url`, `path` | — | if overwrite | Fetch http(s) URL to path; needs `MCP_FETCH_URLS=1` |
 
 **Rules:**
 - Validate entire op array before applying any operation
@@ -734,7 +735,7 @@ ALLOWED_OPS = {
     "write_file", "append_file", "create_dir", "move", "copy", "rename",
     "replace_text", "insert_after", "delete_lines", "patch_lines",
     "delete_request", "delete_confirm", "delete_tree_request",
-    "delete_tree_confirm", "set_permissions",
+    "delete_tree_confirm", "set_permissions", "download",
 }
 
 def validate_ops(ops: list[dict]) -> list[str]
@@ -962,6 +963,32 @@ reaches any tool — this matters more here than in most sibling repos, since
 
 `docker-compose.yml` runs one container (`mcp-filesystem-fs-basic`,
 `FS_HOST=0.0.0.0`, default port `8801`).
+
+### Hybrid file exchange (`shared/exchange.py`)
+
+Over HTTP the caller shares no filesystem with this server, so the path it
+just got back means nothing to it, and it may hold a link rather than a file.
+`shared/exchange.py` closes that gap through env vars that are unset by
+default, leaving a local stdio install untouched:
+
+| Var | Effect |
+|---|---|
+| `MCP_OUTPUT_DIR` | Shared directory other services and a file server can also see. `get_default_output_dir()` routes through it. |
+| `MCP_PUBLIC_BASE_URL` | Public URL serving `MCP_OUTPUT_DIR` — every `fs_write` result whose target lands there gains `public_url`. |
+| `MCP_FETCH_URLS=1` | Enables the `download` op in `fs_write`. |
+
+Rules for this module:
+
+1. URL support here is the `download` **op**, not URL handling inside
+   `resolve_path()`. In every other op `path` is a *destination* — silently
+   downloading a destination would be nonsense. Don't "unify" the two.
+2. Never make fetching the default — offline-first is the contract for a local
+   install. It is opt-in, per deployment.
+3. Never drop the SSRF guard. `assert_fetchable()` refuses hosts resolving to
+   non-public addresses and is re-run on every redirect; an authenticated
+   caller must not be able to use this server to probe the network it runs on.
+4. `public_url` is attached centrally in `_dispatch_op` from the result's
+   `dst`/`path` key — new write ops get it for free by returning one of those.
 
 ### Remote smoke tests (not part of pytest / CI)
 

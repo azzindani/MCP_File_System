@@ -34,6 +34,21 @@ services:
       FS_OAUTH_STATE_DIR: /home/app/.oauth-state
       FS_OAUTH_CLIENT_ID: ${FS_OAUTH_CLIENT_ID:-}
       FS_OAUTH_CLIENT_SECRET: ${FS_OAUTH_CLIENT_SECRET:-}
+      # Hybrid file exchange — see README "Hybrid local + remote file handling".
+      # MCP_OUTPUT_DIR doubles as the in-container mount point below so the
+      # two can never drift apart: point MCP_SHARED_DIR at a host directory
+      # your file server also serves, set MCP_PUBLIC_BASE_URL to that
+      # directory's public URL, and every file written there comes back with a
+      # `public_url` the caller can actually open.
+      MCP_OUTPUT_DIR: ${MCP_OUTPUT_DIR:-/files}
+      MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-}
+      # Off by default. With it on, fs_write's `download` op can fetch an
+      # http(s) URL to a local path. Hosts resolving to loopback/link-local/
+      # private addresses are refused unless MCP_FETCH_ALLOW_PRIVATE=1 — don't
+      # relax that on a publicly reachable deployment.
+      MCP_FETCH_URLS: ${MCP_FETCH_URLS:-0}
+      MCP_FETCH_ALLOW_PRIVATE: ${MCP_FETCH_ALLOW_PRIVATE:-0}
+      MCP_MAX_FETCH_MB: ${MCP_MAX_FETCH_MB:-100}
     mem_limit: ${FS_MEM_LIMIT:-1g}
     volumes:
       # Mount tokens.json read-only when FS_TOKENS_FILE is set. Optional —
@@ -42,6 +57,12 @@ services:
       # The directory tree fs_basic is allowed to manage. Tool calls must use
       # paths under this mount (e.g. /data/notes.md).
       - ./fs-root:/data
+      # Shared output directory (see MCP_OUTPUT_DIR above) — the half of the
+      # filesystem other services and the outside world can also see. The
+      # container writes as uid/gid 999 (`app`), so `chown 999:999` the host
+      # directory before first run — left root-owned, every write there fails
+      # with EACCES, same gotcha as oauth-state below.
+      - ${MCP_SHARED_DIR:-./shared-files}:${MCP_OUTPUT_DIR:-/files}
       # Persists OAuth-issued access/refresh tokens so a container restart
       # doesn't force claude.ai to reauthorize. `mkdir -p oauth-state && chown
       # 999:999 oauth-state` before first run (left root-owned, the

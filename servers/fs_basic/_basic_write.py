@@ -12,9 +12,12 @@ from _basic_helpers import (
     append_receipt,
     atomic_write,
     atomic_write_bytes,
+    attach_public_url,
     cleanup_expired,
     create_token,
+    fetch_url,
     info,
+    is_url,
     ok,
     resolve_path,
     snapshot,
@@ -213,6 +216,7 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
         "delete_confirm": _op_delete_confirm,
         "delete_tree_confirm": _op_delete_confirm,
         "set_permissions": _op_set_permissions,
+        "download": _op_download,
     }
     handler = handlers.get(name)
     if not handler:
@@ -220,7 +224,17 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
             "fs_write", f"Unhandled op: {name}", "Use a supported op from the fs_write op table."
         )
     try:
-        return handler(op_dict, dry_run)
+        result = handler(op_dict, dry_run)
+        # A remote caller shares no filesystem with this server, so the path it
+        # just got back means nothing to it. When the file landed under a
+        # publicly served MCP_OUTPUT_DIR, hand back a URL it can actually use.
+        target = result.get("dst") or result.get("path")
+        if result.get("success") and target:
+            before = len(result)
+            attach_public_url(result, Path(target))
+            if len(result) != before:
+                result["token_estimate"] = len(str(result)) // 4
+        return result
     except ValueError as e:
         return _error(name, str(e), "Ensure path is within your home directory.")
     except PermissionError as e:
@@ -276,6 +290,52 @@ def _op_write_file(op_dict: dict, dry_run: bool) -> dict:
         "path": str(path),
         "backup": backup,
         "progress": [ok(f"Wrote {path.name}")],
+    }
+    r["token_estimate"] = len(str(r)) // 4
+    return r
+
+
+def _op_download(op_dict: dict, dry_run: bool) -> dict:
+    """Fetch an http(s) URL and save it at `path`.
+
+    The one place this server treats a URL as an input. It is deliberately an
+    explicit op rather than URL support inside resolve_path(): every other
+    fs_write op takes `path` as a *destination*, and silently downloading a
+    destination would be nonsense. Requires MCP_FETCH_URLS=1 on the server.
+    """
+    url = str(op_dict["url"]).strip()
+    if not is_url(url):
+        raise ValueError(f"'url' must be an http:// or https:// URL, got {url!r}")
+    path = resolve_path(op_dict["path"])
+
+    backup: str | None = None
+    if path.exists():
+        backup = snapshot(str(path))
+
+    if dry_run:
+        r: dict = {
+            "success": True,
+            "op": "download",
+            "path": str(path),
+            "url": url,
+            "would_change": True,
+            "backup": backup,
+            "progress": [info(f"Would download {url} to {path.name}")],
+        }
+        r["token_estimate"] = len(str(r)) // 4
+        return r
+
+    payload = fetch_url(url).read_bytes()
+    atomic_write_bytes(path, payload)
+    append_receipt(str(path), "fs_write", "download", f"downloaded {len(payload)} bytes", backup)
+    r = {
+        "success": True,
+        "op": "download",
+        "path": str(path),
+        "url": url,
+        "bytes": len(payload),
+        "backup": backup,
+        "progress": [ok(f"Downloaded {path.name}", f"{len(payload):,} bytes")],
     }
     r["token_estimate"] = len(str(r)) // 4
     return r

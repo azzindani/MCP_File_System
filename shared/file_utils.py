@@ -1,9 +1,34 @@
 """Core path utilities: resolve, atomic write, default output dir."""
 
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+from shared.exchange import (
+    attach_public_url,
+    fetch_url,
+    get_inbox_dir,
+    get_output_dir,
+    is_url,
+    public_url_for,
+    url_fetch_enabled,
+)
+
+__all__ = [
+    "atomic_write",
+    "atomic_write_bytes",
+    "attach_public_url",
+    "fetch_url",
+    "get_default_output_dir",
+    "get_inbox_dir",
+    "get_output_dir",
+    "is_url",
+    "public_url_for",
+    "resolve_path",
+    "url_fetch_enabled",
+]
 
 
 def resolve_path(file_path: str, must_exist: bool = False) -> Path:
@@ -66,7 +91,14 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
 
 
 def get_default_output_dir(input_path: str | None = None) -> Path:
-    """Return input file's parent dir, or ~/Downloads as fallback."""
+    """Return MCP_OUTPUT_DIR, else the input file's parent, else ~/Downloads.
+
+    MCP_OUTPUT_DIR outranks the input file's directory: a remote deployment
+    sets it precisely so generated files land somewhere the caller can reach,
+    which an input file's own directory is not guaranteed to be.
+    """
+    if os.environ.get("MCP_OUTPUT_DIR", "").strip():
+        return get_output_dir()
     if input_path:
         return Path(input_path).parent
     downloads = Path.home() / "Downloads"
