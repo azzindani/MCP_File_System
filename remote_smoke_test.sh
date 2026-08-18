@@ -160,4 +160,44 @@ RESULT=$(call 53 fs_query "{\"pattern\":\"*\",\"path\":\"$GREP_DIR\",\"content\"
 echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "grep matching 6 files with max_results=5 IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
 
 echo
+echo "== hybrid file exchange (remote-only behaviour) =="
+# Only meaningful against a deployment that sets MCP_OUTPUT_DIR /
+# MCP_PUBLIC_BASE_URL / MCP_FETCH_URLS — exactly what pytest cannot check,
+# since pytest never spins up a server or touches the network.
+CONTAINER="${CONTAINER:-mcp-filesystem-fs-basic}"
+SHARED_DIR=$(docker exec "$CONTAINER" printenv MCP_OUTPUT_DIR 2>/dev/null || true)
+if [ -z "$SHARED_DIR" ]; then
+  echo "  SKIP: MCP_OUTPUT_DIR is unset on $CONTAINER — nothing to verify"
+else
+  RESULT=$(call 60 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"$SHARED_DIR/smoke_exchange.txt\",\"content\":\"shared\"}]}")
+  echo "$RESULT" | grep -q 'public_url' && pass "a write into the shared dir came back with a public_url" || fail "no public_url: $RESULT"
+  MODE=$(docker exec "$CONTAINER" stat -c '%a' "$SHARED_DIR/smoke_exchange.txt" 2>/dev/null)
+  case "$MODE" in
+    *[4567]) pass "written file is readable by the file server sharing the dir (mode $MODE)" ;;
+    *) fail "mode $MODE leaves the file unreadable to anything else sharing the directory" ;;
+  esac
+
+  # A *sibling* endpoint's public /health, never this server's own: fetching
+  # its own public URL deadlocks, because the tool call occupies the worker
+  # that would have to serve the request, and the fetch dies on the timeout.
+  RESULT=$(call 61 fs_write "{\"ops\":[{\"op\":\"download\",\"url\":\"https://math.casava.space/health\",\"path\":\"$SHARED_DIR/smoke_download.json\"}]}")
+  if echo "$RESULT" | grep -q "does not fetch URLs"; then
+    echo "  SKIP: MCP_FETCH_URLS is not enabled on $CONTAINER"
+  else
+    echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "download op fetched a real URL to a real path" || fail "download -> $RESULT"
+    docker exec "$CONTAINER" grep -q 'status' "$SHARED_DIR/smoke_download.json" && pass "downloaded file holds the real remote content" || fail "downloaded file is empty or wrong"
+  fi
+
+  RESULT=$(call 62 fs_write "{\"ops\":[{\"op\":\"download\",\"url\":\"http://169.254.169.254/latest/meta-data/\",\"path\":\"$SHARED_DIR/ssrf.txt\"}]}")
+  if echo "$RESULT" | grep -q "non-public address"; then
+    pass "SSRF guard refused the link-local metadata address"
+  elif echo "$RESULT" | grep -q "does not fetch URLs"; then
+    echo "  SKIP: URL fetching disabled, guard not reachable"
+  else
+    fail "SSRF guard did not fire -> $RESULT"
+  fi
+  docker exec "$CONTAINER" sh -c "rm -f '$SHARED_DIR'/smoke_exchange.txt* '$SHARED_DIR'/smoke_download.json* '$SHARED_DIR'/ssrf.txt*"
+fi
+
+echo
 echo "ALL 6 TOOLS + boundary regression PASSED against $DOMAIN"
