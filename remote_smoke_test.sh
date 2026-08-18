@@ -121,6 +121,11 @@ echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "reading 
 echo
 echo "== read (tree mode): exactly max_tree_entries vs. one over =="
 TREE_DIR="/tmp/remote-smoke-test/tree_boundary"
+# Start from an empty directory: these are exact-count assertions, so files
+# left by a previous run (the extra_dir below, the 6th grep file) would make
+# the "exactly at the cap" case see one entry too many and fail. The script
+# has to be re-runnable.
+docker exec "${CONTAINER:-mcp-filesystem-fs-basic}" rm -rf "$TREE_DIR"
 for batch in 0 1 2 3 4; do
   OPS=$(python3 -c "
 import json
@@ -144,6 +149,7 @@ echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "tree of 
 echo
 echo "== fs_query (grep mode): exactly max_results vs. one over =="
 GREP_DIR="/tmp/remote-smoke-test/grep_boundary"
+docker exec "${CONTAINER:-mcp-filesystem-fs-basic}" rm -rf "$GREP_DIR"
 OPS=$(python3 -c "
 import json
 ops = [{'op': 'write_file', 'path': f'$GREP_DIR/m{i}.txt', 'content': 'boundarytoken'} for i in range(5)]
