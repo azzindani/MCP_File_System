@@ -138,9 +138,7 @@ def assert_fetchable(url: str) -> None:
     """Raise ValueError unless url is http(s) on a publicly routable host."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Only http and https URLs can be fetched, got {parsed.scheme or 'no'} scheme."
-        )
+        raise ValueError(f"Only http and https URLs can be fetched, got {parsed.scheme or 'no'} scheme.")
     host = parsed.hostname
     if not host:
         raise ValueError(f"URL has no host: {url}")
@@ -181,9 +179,7 @@ def _safe_filename(url: str, headers: Any) -> str:
     if not name:
         name = "download"
     if not Path(name).suffix:
-        content_type = (
-            (headers.get("Content-Type", "") if headers else "").split(";")[0].strip().lower()
-        )
+        content_type = (headers.get("Content-Type", "") if headers else "").split(";")[0].strip().lower()
         name += _TYPE_SUFFIXES.get(content_type, "")
     return name
 
@@ -216,9 +212,7 @@ def fetch_url(url: str, dest_dir: Path | None = None) -> Path:
         with opener.open(request, timeout=_FETCH_TIMEOUT_SECONDS) as response:
             declared = response.headers.get("Content-Length", "")
             if declared.isdigit() and int(declared) > limit:
-                raise ValueError(
-                    f"Download is larger than the {limit // (1024 * 1024)} MB limit: {url}"
-                )
+                raise ValueError(f"Download is larger than the {limit // (1024 * 1024)} MB limit: {url}")
             name = _safe_filename(url, response.headers)
             payload = response.read(limit + 1)
     except ValueError:
@@ -235,6 +229,9 @@ def fetch_url(url: str, dest_dir: Path | None = None) -> Path:
     try:
         with os.fdopen(handle, "wb") as stream:
             stream.write(payload)
+        # mkstemp creates 0600 and os.replace keeps it. This directory is a
+        # shared exchange — a file only its writer can read defeats the point.
+        os.chmod(temp_name, 0o644)
         os.replace(temp_name, target)
     except Exception:
         Path(temp_name).unlink(missing_ok=True)
