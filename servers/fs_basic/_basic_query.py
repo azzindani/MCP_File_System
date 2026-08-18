@@ -193,6 +193,22 @@ def _fs_query(
             f"Use fs_query with a narrower pattern or increase max_results "
             f"(current: {effective_max})."
         )
+    elif not total_found:
+        # `pattern` is a glob matched against the whole filename, so the substring
+        # a caller naturally reaches for ("report") matches nothing while the file
+        # sits right there. Zero matches plus success:true is a silent dead end.
+        if not any(ch in pattern for ch in "*?["):
+            result["hint"] = (
+                f"No file is named exactly '{pattern}'. pattern is a glob, not a substring — "
+                f"try '*{pattern}*' to match anywhere in the name."
+            )
+        elif content:
+            result["hint"] = (
+                f"Files matching '{pattern}' exist only if none contain '{content}'. "
+                "Search without the content filter first to confirm what is there."
+            )
+        else:
+            result["hint"] = f"Nothing under {root} matches '{pattern}'. Use fs_index to list what is there."
     result["token_estimate"] = len(str(result)) // 4
     return result
 
