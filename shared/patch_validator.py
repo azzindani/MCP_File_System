@@ -88,7 +88,9 @@ def validate_ops(ops: list[dict]) -> list[str]:
             errors.append(f"{prefix}: 'op' must be a string")
             continue
         if op_name not in ALLOWED_OPS:
-            errors.append(f"{prefix}: unknown op '{op_name}'")
+            errors.append(
+                f"{prefix}: unknown op '{op_name}'. Valid ops: {', '.join(sorted(ALLOWED_OPS))}"
+            )
             continue
 
         for field in _REQUIRED.get(op_name, []):

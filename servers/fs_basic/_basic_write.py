@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from _basic_helpers import (
+    ALLOWED_OPS,
     _error,
     append_receipt,
     atomic_write,
@@ -50,10 +51,12 @@ def run_fs_write(ops: list[dict], dry_run: bool = False) -> dict:
 def _fs_write(ops: list[dict], dry_run: bool) -> dict:
     cleanup_expired()
 
-    # Step 1: structural validation
+    # Step 1: structural validation. Report every error, and name the ops the
+    # caller may use -- the tool schema is an opaque list[dict], so this message
+    # is the only place the vocabulary is discoverable.
     errors = validate_ops(ops)
     if errors:
-        return _error("fs_write", errors[0], "Fix the op array and retry.")
+        return _error("fs_write", "; ".join(errors), f"Valid ops: {', '.join(sorted(ALLOWED_OPS))}")
 
     # Step 2: detect delete ops — they stop the batch
     delete_op_names = ("delete_request", "delete_tree_request")
