@@ -50,6 +50,12 @@ def _fs_manage(action: str, path: str) -> dict:
         "size": "disk_usage",
         "storage": "disk_usage",
         "space": "disk_usage",
+        # The docstring opens with "Disk usage", and every other phrase in it
+        # already has an entry here -- "symlink info" -> symlink, "snapshot
+        # version list" -> snapshot, "permissions" -> perms. "usage" was the one
+        # word a caller could read straight off the description and have
+        # rejected: "Unknown action 'usage'".
+        "usage": "disk_usage",
     }
     action = _action_aliases.get(action, action)
     if action not in ("disk_usage", "permissions", "symlink_info", "versions"):
