@@ -35,6 +35,14 @@ def run_fs_archive(
         return _fs_archive(action, path, target, format_, dry_run)
     except ValueError as e:
         return _error("fs_archive", str(e), "Ensure all paths are within your home directory.")
+    except FileNotFoundError as e:
+        # "Check archive path, target, and format" never said which of the three
+        # was wrong. For extract and list the missing path is always `path`.
+        return _error(
+            "fs_archive",
+            str(e),
+            f"'path' must be an existing archive for action={action}. Use fs_query to locate it.",
+        )
     except Exception as e:
         return _error("fs_archive", str(e), "Check archive path, target, and format then retry.")
 
@@ -76,7 +84,33 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
         )
 
     arc = resolve_path(archive_path)
-    src = resolve_path(source, must_exist=True)
+
+    # The swapped-argument guard further down needs both paths in hand, but
+    # `source` used to be resolved with must_exist=True right here -- and in a
+    # swapped call `source` holds the archive that does not exist *yet*, so
+    # resolution raised FileNotFoundError first and the guard written for this
+    # exact mistake never ran. The caller was told "Path does not exist:
+    # <the .zip it asked us to create>" under a hint naming all three
+    # arguments. Judge the two names before touching the filesystem.
+    src = resolve_path(source)
+    if not src.exists():
+        src_is_archive = str(src).lower().endswith(_ARCHIVE_SUFFIXES)
+        arc_is_archive = str(arc).lower().endswith(_ARCHIVE_SUFFIXES)
+        if src_is_archive and not arc_is_archive:
+            return _error(
+                "fs_archive",
+                f"'target' does not exist: {src.name}",
+                "'path' is the archive to write and 'target' is what goes into it -- they look "
+                f"swapped here. To create {src.name}, pass it as 'path' and give 'target' the "
+                f"file or folder to archive (such as {arc.name}).",
+            )
+        return _error(
+            "fs_archive",
+            f"'target' does not exist: {src}",
+            "'target' is the existing file or folder to archive and 'path' is the .zip or "
+            ".tar.gz to create. Use fs_query to locate the file first.",
+        )
+
     progress = []
 
     # Count items
