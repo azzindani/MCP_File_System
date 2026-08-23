@@ -39,8 +39,13 @@ from shared.platform_utils import (  # noqa: E402
     is_constrained_mode,
 )
 from shared.progress import fail, info, ok, undo, warn  # noqa: E402
-from shared.receipt import append_receipt, read_receipt_log  # noqa: E402
-from shared.version_control import list_versions, restore_version, snapshot  # noqa: E402
+from shared.receipt import append_receipt, carry_receipt, read_receipt_log  # noqa: E402
+from shared.version_control import (  # noqa: E402
+    carry_snapshots,
+    list_versions,
+    restore_version,
+    snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +98,8 @@ __all__ = [
     "undo",
     "warn",
     "append_receipt",
+    "carry_receipt",
+    "carry_snapshots",
     "read_receipt_log",
     "list_versions",
     "restore_version",

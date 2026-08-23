@@ -132,3 +132,41 @@ def list_versions(file_path: str) -> list[dict]:
         return versions
     except Exception:
         return []
+
+
+def carry_snapshots(src_path: str, dst_path: str) -> int:
+    """Move a file's snapshots to follow it to a new name or directory.
+
+    Snapshots are named from the file's stem and live in the .mcp_versions
+    beside it, so a rename or a move left every one of them behind under the
+    old name. `fs_manage action=versions` then reported zero versions for a
+    file that had them a moment earlier, and reported success doing it -- the
+    file's whole recovery history was detached with nothing to say so.
+
+    Returns the number of snapshots carried across. Best-effort, like the rest
+    of this module: a snapshot that cannot be moved is left where it is rather
+    than failing the rename that triggered this.
+    """
+    moved = 0
+    try:
+        src = Path(src_path)
+        dst = Path(dst_path)
+        if src.stem == dst.stem and src.parent == dst.parent:
+            return 0
+        target_dir = _versions_dir_for(dst)
+        for bak in _find_snapshots(src, _TS_GLOB):
+            # `{stem}_{ts}{ext}.bak` and the legacy `{stem}_{ts}.bak` both keep
+            # everything after the stem, so the tail transplants unchanged.
+            tail = bak.name[len(src.stem) :]
+            new = target_dir / f"{dst.stem}{tail}"
+            if new.exists():
+                continue
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(bak), new)
+                moved += 1
+            except OSError:
+                continue
+    except Exception:
+        return moved
+    return moved
