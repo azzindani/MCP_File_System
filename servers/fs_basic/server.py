@@ -22,6 +22,8 @@ from mcp.types import ToolAnnotations  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 
+from shared.strict_args import enforce_known_arguments  # noqa: E402
+
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("FS_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("FS_PORT", "8801"))
@@ -69,12 +71,13 @@ def fs_query(
     include_meta: bool = False,
     follow_symlinks: bool = False,
     max_results: int = 50,
+    type: str = "",
 ) -> dict:
     """Locate files by name/content. grep_mode returns matching lines."""
     return engine.fs_query(
         pattern=pattern,
         path=path,
-        type_=type_,
+        type_=type or type_,
         content=content,
         grep_mode=grep_mode,
         context_lines=context_lines,
@@ -176,6 +179,7 @@ def fs_archive(
     target: str = "",
     format_: str = "zip",
     dry_run: bool = False,
+    format: str = "",
 ) -> dict:
     # Three sweeps running, the first call to this tool passed the archive as
     # `target` and the payload as `path` -- the natural reading of the two
@@ -187,9 +191,15 @@ def fs_archive(
         action=action,
         path=path,
         target=target,
-        format_=format_,
+        format_=format or format_,
         dry_run=dry_run,
     )
+
+
+# The bundled FastMCP ignores an argument a tool does not declare, so a wrong
+# name yields a plausible answer with the argument silently dropped. Refuse it,
+# and name the ones that would have worked.
+enforce_known_arguments(mcp)
 
 
 def main() -> None:
