@@ -146,12 +146,16 @@ class TestARetryIsVisibleInTheAnswer:
         assert r["total_lines"] == len(f.read_text(encoding="utf-8").splitlines())
 
     def test_append_reports_the_resulting_size(self, tmp_path):
+        # Sizes come from the file rather than from counted characters: on
+        # Windows write_text turns each "\n" into two bytes, so the literals
+        # 11 and 16 were asserting the platform, not the behaviour.
         f = tmp_path / "log.txt"
-        f.write_text("start\n", encoding="utf-8")
+        f.write_bytes(b"start\n")
         first = write("append_file", path=str(f), content="more\n")
+        after_first = f.stat().st_size
         second = write("append_file", path=str(f), content="more\n")
-        assert first["size_bytes"] == 11, first
-        assert second["size_bytes"] == 16, second
+        assert first["size_bytes"] == after_first, first
+        assert second["size_bytes"] == f.stat().st_size, second
         assert first["size_bytes"] != second["size_bytes"]
 
     def test_append_size_matches_the_file(self, tmp_path):
