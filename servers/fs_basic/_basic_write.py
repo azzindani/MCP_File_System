@@ -14,6 +14,8 @@ from _basic_helpers import (
     atomic_write,
     atomic_write_bytes,
     attach_public_url,
+    carry_receipt,
+    carry_snapshots,
     cleanup_expired,
     create_token,
     fetch_url,
@@ -428,14 +430,23 @@ def _op_move(op_dict: dict, dry_run: bool) -> dict:
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src), dst)
+    # Same detachment as rename: the destination started a fresh history whose
+    # only entry was the move itself, while every snapshot stayed behind in the
+    # source directory's .mcp_versions.
+    carried = carry_snapshots(str(src), str(dst))
+    carry_receipt(str(src), str(dst))
     append_receipt(str(dst), "fs_write", "move", f"moved from {src}", None)
+    progress = [ok(f"Moved {src.name} → {dst.name}")]
+    if carried:
+        progress.append(info(f"Carried {carried} snapshot(s) to the new location"))
     r = {
         "success": True,
         "op": "move",
         "src": str(src),
         "dst": str(dst),
         "backup": None,
-        "progress": [ok(f"Moved {src.name} → {dst.name}")],
+        "snapshots_carried": carried,
+        "progress": progress,
     }
     r["token_estimate"] = len(str(r)) // 4
     return r
@@ -504,12 +515,23 @@ def _op_rename(op_dict: dict, dry_run: bool) -> dict:
         return r
 
     path.rename(dst)
+    # Snapshots and the receipt log are both named after the file, so without
+    # this a rename silently detaches the file's whole history: fs_manage
+    # action=versions went from 1 to 0 with success:true, and no receipt
+    # recorded the rename either.
+    carried = carry_snapshots(str(path), str(dst))
+    carry_receipt(str(path), str(dst))
+    append_receipt(str(dst), "fs_write", "rename", f"renamed from {path.name}", None)
+    progress = [ok(f"Renamed {path.name} → {new_name}")]
+    if carried:
+        progress.append(info(f"Carried {carried} snapshot(s) to the new name"))
     r = {
         "success": True,
         "op": "rename",
         "path": str(path),
         "new_path": str(dst),
-        "progress": [ok(f"Renamed {path.name} → {new_name}")],
+        "snapshots_carried": carried,
+        "progress": progress,
     }
     r["token_estimate"] = len(str(r)) // 4
     return r
@@ -835,13 +857,20 @@ def _op_set_permissions(op_dict: dict, dry_run: bool) -> dict:
         r["token_estimate"] = len(str(r)) // 4
         return r
 
+    before = oct(path.stat().st_mode & 0o777)
     path.chmod(mode_int)
+    # Who can read a file is the change most worth being able to look up later,
+    # and it was the one write op that recorded nothing at all.
+    append_receipt(
+        str(path), "fs_write", "set_permissions", f"mode {before} → {oct(mode_int)}", None
+    )
     r = {
         "success": True,
         "op": "set_permissions",
         "path": str(path),
         "mode": oct(mode_int),
-        "progress": [ok(f"Set permissions {mode_str} on {path.name}")],
+        "mode_before": before,
+        "progress": [ok(f"Set permissions {mode_str} on {path.name}", f"was {before}")],
     }
     r["token_estimate"] = len(str(r)) // 4
     return r

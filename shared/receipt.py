@@ -57,3 +57,31 @@ def read_receipt_log(file_path: str) -> list[dict]:
         return json.loads(rp.read_text(encoding="utf-8"))
     except Exception:
         return []
+
+
+def carry_receipt(src_path: str, dst_path: str) -> bool:
+    """Move a file's receipt log to follow it to a new name or directory.
+
+    The log is a sibling named after the file, so a rename or a move orphaned
+    it under the old name: the destination started a fresh history whose first
+    and only entry was the move itself, and everything the file had recorded
+    before that became unreachable. Best-effort, and never raises.
+    """
+    try:
+        old = _receipt_path(src_path)
+        if not old.exists():
+            return False
+        new = _receipt_path(dst_path)
+        if new.exists():
+            # A destination with its own history keeps it; merge oldest-first
+            # so the combined log still reads in chronological order.
+            merged = json.loads(old.read_text(encoding="utf-8")) + json.loads(
+                new.read_text(encoding="utf-8")
+            )
+            new.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+            old.unlink()
+            return True
+        old.rename(new)
+        return True
+    except Exception:
+        return False
