@@ -251,8 +251,49 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
         return _error(name, str(e), "Ensure path is within your home directory.")
     except PermissionError as e:
         return _error(name, f"Permission denied: {e}", "Check file/directory permissions.")
+    except FileNotFoundError as e:
+        return _error(name, str(e), _missing_source_hint(name, op_dict))
     except Exception as e:
         return _error(name, str(e), f"Retry op={name} with corrected parameters.")
+
+
+def _already_applied(name: str, op_dict: dict) -> Path | None:
+    """Where this op would have put the file, if it already ran."""
+    try:
+        if name in ("move", "copy"):
+            return resolve_path(str(op_dict.get("dst", "")))
+        if name == "rename":
+            src = Path(str(op_dict.get("path", ""))).expanduser()
+            new_name = str(op_dict.get("name", ""))
+            if not new_name or "/" in new_name or "\\" in new_name:
+                return None
+            return resolve_path(str(src.parent / new_name))
+    except Exception:
+        return None
+    return None
+
+
+def _missing_source_hint(name: str, op_dict: dict) -> str:
+    """Say whether the op looks already-applied rather than simply wrong.
+
+    move, rename and copy resolve their source with must_exist=True, so a client
+    retrying one whose first attempt timed out gets "Path does not exist" and the
+    generic hint "Retry op=move with corrected parameters." That advice is wrong
+    twice: retrying will not help, and the move already succeeded. The caller
+    cannot tell "already done" from "never valid" and the hint pushes it toward
+    the one action guaranteed to fail again.
+
+    Round 11's sweep hit this on the second identical call to move, rename and
+    replace_text within one phase.
+    """
+    landed = _already_applied(name, op_dict)
+    if landed is not None and landed.exists():
+        return (
+            f"{landed.name} already exists at the destination, so this {name} looks like it "
+            f"already ran — a retry of a call that timed out. Read it with fs_read before "
+            f"repeating the op."
+        )
+    return f"Nothing exists at the source. Check it with fs_read mode=meta before retrying {name}."
 
 
 # ---------------------------------------------------------------------------
@@ -272,22 +313,26 @@ def _op_write_file(op_dict: dict, dry_run: bool) -> dict:
             binary = base64.b64decode(content, validate=True)
         except binascii.Error as exc:
             raise ValueError(f"content is not valid base64: {exc}") from exc
-    backup: str | None = None
-
-    if path.exists():
-        backup = snapshot(str(path))
-
+    # The dry-run answer comes before the snapshot, not after. A dry run's whole
+    # contract is that it changes nothing, and seven of these ops snapshotted
+    # first -- so previewing three ops on one file left three full copies of it
+    # in .mcp_versions, and the version list filled with snapshots of writes that
+    # never happened.
     if dry_run:
         r: dict = {
             "success": True,
             "op": "write_file",
             "path": str(path),
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would write {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
+
+    backup: str | None = None
+    if path.exists():
+        backup = snapshot(str(path))
 
     if binary is not None:
         atomic_write_bytes(path, binary)
@@ -320,10 +365,6 @@ def _op_download(op_dict: dict, dry_run: bool) -> dict:
         raise ValueError(f"'url' must be an http:// or https:// URL, got {url!r}")
     path = resolve_path(op_dict["path"])
 
-    backup: str | None = None
-    if path.exists():
-        backup = snapshot(str(path))
-
     if dry_run:
         r: dict = {
             "success": True,
@@ -331,11 +372,15 @@ def _op_download(op_dict: dict, dry_run: bool) -> dict:
             "path": str(path),
             "url": url,
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would download {url} to {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
+
+    backup: str | None = None
+    if path.exists():
+        backup = snapshot(str(path))
 
     payload = fetch_url(url).read_bytes()
     atomic_write_bytes(path, payload)
@@ -539,11 +584,6 @@ def _op_move(op_dict: dict, dry_run: bool) -> dict:
 def _op_copy(op_dict: dict, dry_run: bool) -> dict:
     src = resolve_path(op_dict["src"], must_exist=True)
     dst = resolve_path(op_dict["dst"])
-    backup: str | None = None
-
-    if dst.exists():
-        backup = snapshot(str(dst))
-
     if dry_run:
         r: dict = {
             "success": True,
@@ -551,11 +591,15 @@ def _op_copy(op_dict: dict, dry_run: bool) -> dict:
             "src": str(src),
             "dst": str(dst),
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would copy {src.name} → {dst.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
+
+    backup: str | None = None
+    if dst.exists():
+        backup = snapshot(str(dst))
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
@@ -652,8 +696,6 @@ def _op_replace_text(op_dict: dict, dry_run: bool) -> dict:
             "Use fs_read to verify the file content and pattern.",
         )
 
-    backup = snapshot(str(path))
-
     if dry_run:
         r: dict = {
             "success": True,
@@ -661,11 +703,13 @@ def _op_replace_text(op_dict: dict, dry_run: bool) -> dict:
             "path": str(path),
             "would_replace": n,
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would replace {n} occurrence(s) in {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
+
+    backup = snapshot(str(path))
 
     atomic_write(path, new_content)
     append_receipt(str(path), "fs_write", "replace_text", f"replaced {n} occurrences", backup)
@@ -710,8 +754,6 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
             "Use fs_read to verify file contents before inserting.",
         )
 
-    backup = snapshot(str(path))
-
     if dry_run:
         r: dict = {
             "success": True,
@@ -719,11 +761,13 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
             "path": str(path),
             "insertions": inserted,
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would insert after {inserted} match(es)")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
+
+    backup = snapshot(str(path))
 
     atomic_write(path, "".join(new_lines))
     append_receipt(str(path), "fs_write", "insert_after", f"inserted {inserted} block(s)", backup)
@@ -807,7 +851,6 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
     e = min(end, total)
 
     new_lines = lines[:s] + lines[e:]
-    backup = snapshot(str(path))
 
     if dry_run:
         r: dict = {
@@ -816,7 +859,7 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
             "path": str(path),
             "lines_removed": e - s,
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             # start_line/end_line are 0-based and end-exclusive, so "lines 2-3"
             # reads as two lines and removes one. Say the count, which is what
             # the caller can actually check against the file.
@@ -827,6 +870,7 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
         r["token_estimate"] = len(str(r)) // 4
         return r
 
+    backup = snapshot(str(path))
     atomic_write(path, "".join(new_lines))
     append_receipt(
         str(path), "fs_write", "delete_lines", f"removed {e - s} line(s) at [{s}, {e})", backup
@@ -876,7 +920,6 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
     if patch_lines and replaced_ends_line and not patch_lines[-1].endswith(("\n", "\r")):
         patch_lines[-1] += "\n"
     new_lines = lines[:s] + patch_lines + lines[e:]
-    backup = snapshot(str(path))
 
     if dry_run:
         r: dict = {
@@ -885,12 +928,13 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
             "path": str(path),
             "lines_replaced": e - s,
             "would_change": True,
-            "backup": backup,
+            "backup": None,
             "progress": [info(f"Would patch lines {s}–{e} in {path.name}")],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
+    backup = snapshot(str(path))
     atomic_write(path, "".join(new_lines))
     append_receipt(str(path), "fs_write", "patch_lines", f"patched lines {s}–{e}", backup)
     r = {
