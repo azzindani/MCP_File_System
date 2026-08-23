@@ -18,6 +18,7 @@ from _basic_helpers import (
     carry_snapshots,
     cleanup_expired,
     create_token,
+    discard_snapshot_if_unchanged,
     fetch_url,
     info,
     is_url,
@@ -275,6 +276,24 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
         # `new_path` and keeps `path` as the name the file had *before*. Reading
         # `path` there hands back a URL for a file that no longer exists.
         target = result.get("dst") or result.get("new_path") or result.get("path")
+
+        # The snapshot is taken before the write, because nothing knows yet
+        # whether the write will change anything. Three identical write_file
+        # calls left two backups, both byte-identical to the live file. Checked
+        # here rather than in each handler so every op gets it, and checked
+        # after the fact so it is exact: a backup equal to the file now on disk
+        # cannot restore anything the file does not already hold. A delete's
+        # backup survives -- its file is gone, so there is nothing to compare
+        # it against and the helper keeps it.
+        if result.get("success") and not dry_run and target and result.get("backup"):
+            kept = discard_snapshot_if_unchanged(result["backup"], target)
+            if not kept:
+                result["backup"] = None
+                result.setdefault("progress", []).append(
+                    info("Snapshot discarded", "the file is unchanged")
+                )
+                result["token_estimate"] = len(str(result)) // 4
+
         if result.get("success") and target:
             before = len(result)
             attach_public_url(result, Path(target))
