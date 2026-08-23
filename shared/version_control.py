@@ -54,9 +54,29 @@ def _search_dirs(src: Path) -> list[Path]:
     return seen
 
 
+def _legacy_is_unambiguous(src: Path) -> bool:
+    """True when no other file beside this one shares its stem.
+
+    `report_{ts}.bak` could be a snapshot of report.csv or of report.docx --
+    the siblings' extension-less name says nothing about which. Reading it is
+    only safe where there is nothing to confuse it with. Restoring a Word
+    document over a dataset under success: true is what the extension-bearing
+    name exists to prevent, and matching the old one unconditionally reopened
+    the hole on the read side.
+    """
+    try:
+        siblings = list(src.parent.iterdir())
+    except OSError:
+        return False
+    return not any(p.is_file() and p.stem == src.stem and p.suffix != src.suffix for p in siblings)
+
+
 def _patterns(src: Path, timestamp: str) -> list[str]:
-    """Both naming conventions, this repo's first."""
-    return [f"{src.stem}_{timestamp}{src.suffix}.bak", f"{src.stem}_{timestamp}.bak"]
+    """This repo's naming, plus the siblings' where it cannot be ambiguous."""
+    patterns = [f"{src.stem}_{timestamp}{src.suffix}.bak"]
+    if _legacy_is_unambiguous(src):
+        patterns.append(f"{src.stem}_{timestamp}.bak")
+    return patterns
 
 
 def _find_snapshots(src: Path, timestamp: str) -> list[Path]:

@@ -144,3 +144,34 @@ class TestAnUnknownNameIsRefused:
         r = call("fs_read", {"path": str(Path(tree) / "one.txt"), "mode": "content"})
         assert r["success"] is True, r.get("error")
         assert "alpha" in json.dumps(r)
+
+
+class TestTheRefusalSaysItOnce:
+    """The refusal listed every accepted name twice and mis-stated its size.
+
+    `hint` was built as `f"{hint} Accepted: {names}."` where `hint` had already
+    spelled the same list out when there was no near-miss to suggest. Against
+    the live endpoint, fs_query's refusal:
+
+        fs_query accepts: content, context_lines, follow_symlinks, grep_mode,
+        include_meta, max_results, path, pattern, type, type_. Accepted:
+        content, context_lines, follow_symlinks, grep_mode, include_meta,
+        max_results, path, pattern, type, type_.
+
+    241 characters where 120 say the same thing. And `token_estimate` was the
+    literal 40 whatever the response held -- under half the real size here, on
+    a server whose entire design is a 12,000-token client budget.
+    """
+
+    def test_the_accepted_names_appear_once(self, tree):
+        r = call("fs_query", {"path": tree, "pattern": "*", "nonsense_argument": 1})
+        assert r["hint"].count("max_results") == 1, r["hint"]
+
+    def test_a_near_miss_still_names_the_alternatives(self, tree):
+        r = call("fs_query", {"path": tree, "patern": "*"})
+        assert "pattern" in r["hint"], r["hint"]
+        assert "Did you mean" in r["hint"], r["hint"]
+
+    def test_the_token_estimate_is_measured(self, tree):
+        r = call("fs_query", {"path": tree, "pattern": "*", "nonsense_argument": 1})
+        assert r["token_estimate"] >= len(str(r)) // 8, r["token_estimate"]
