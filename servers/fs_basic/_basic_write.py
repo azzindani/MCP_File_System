@@ -629,6 +629,55 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
     return r
 
 
+_LINE_RANGE_CONVENTION = (
+    "Line numbers are 0-based and end_line is exclusive, so start_line=4, "
+    "end_line=5 is the fifth line on its own."
+)
+
+
+def _line_range_error(op: str, start: int, end: int, total: int) -> dict | None:
+    """Reject an unusable [start_line, end_line) range, naming the part that is wrong.
+
+    The previous message clamped both bounds before printing them and then blamed
+    the file's length for every case: start_line=5, end_line=5 on a six-line file
+    came back as "Invalid line range [5, 5) for file with 6 lines", pointing the
+    caller at the one number that was fine, under a hint telling them to go and
+    read the line numbers they already had. It also printed the clamped values
+    rather than the ones the caller sent, so start_line=-5 was quoted back as 0.
+
+    The end-exclusive convention had no other home: fs_write's docstring is 66
+    characters and its `ops` schema is an opaque list[dict], so this message is
+    where a caller learns it — which meant learning it by failing first.
+    """
+    if start < 0:
+        return _error(
+            op,
+            f"start_line {start} is negative",
+            f"{_LINE_RANGE_CONVENTION} The first line is start_line=0.",
+        )
+    if start >= total:
+        last = total - 1 if total else 0
+        return _error(
+            op,
+            f"start_line {start} is past the end of a {total}-line file",
+            f"{_LINE_RANGE_CONVENTION} The last line is start_line={last}. "
+            "Use fs_read to see the current line numbers.",
+        )
+    if end <= start:
+        detail = (
+            f"start_line and end_line are both {start}, which selects nothing"
+            if end == start
+            else f"end_line {end} is not greater than start_line {start}"
+        )
+        return _error(
+            op,
+            f"Empty line range: {detail}",
+            f"{_LINE_RANGE_CONVENTION} For line {start} alone, pass "
+            f"start_line={start}, end_line={start + 1}.",
+        )
+    return None
+
+
 def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
     path = resolve_path(op_dict["path"], must_exist=True)
     start: int = int(op_dict["start_line"])
@@ -641,14 +690,11 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
 
     lines = text.splitlines(keepends=True)
     total = len(lines)
-    s = max(0, start)
+    bad = _line_range_error("delete_lines", start, end, total)
+    if bad:
+        return bad
+    s = start
     e = min(end, total)
-    if s >= e:
-        return _error(
-            "delete_lines",
-            f"Invalid line range [{s}, {e}) for file with {total} lines",
-            "Use fs_read to inspect line numbers before deleting.",
-        )
 
     new_lines = lines[:s] + lines[e:]
     backup = snapshot(str(path))
@@ -693,14 +739,11 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
 
     lines = text.splitlines(keepends=True)
     total = len(lines)
-    s = max(0, start)
+    bad = _line_range_error("patch_lines", start, end, total)
+    if bad:
+        return bad
+    s = start
     e = min(end, total)
-    if s >= e:
-        return _error(
-            "patch_lines",
-            f"Invalid line range [{s}, {e}) for file with {total} lines",
-            "Use fs_read to inspect line numbers.",
-        )
 
     patch_lines = patch.splitlines(keepends=True)
     new_lines = lines[:s] + patch_lines + lines[e:]
