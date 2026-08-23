@@ -2,6 +2,37 @@
 
 validate_ops() returns a list of error strings.
 Empty list means the array is structurally valid.
+
+`shared/strict_args.py` makes every tool refuse an argument it does not declare,
+but it can only see the tool's own parameters -- and `fs_write` declares two,
+`ops` and `dry_run`. Everything that actually varies a write lives inside the op
+dicts, where nothing looked at the key names at all: only the *required* fields
+were checked, so any other key was dropped without a word. The optional ones are
+undiscoverable to begin with, because the schema for `ops` is `list[dict]`:
+
+    replace_text   regex, count
+    insert_after   count
+    write_file     content_encoding
+    restore        timestamp
+
+Round 11 measured both halves against the live server:
+
+    replace_text find="X+" replace="-" use_regex=True
+        -> success: false, "Pattern not found in t.txt"
+    replace_text find="X+" replace="-" regex=True
+        -> success: true, replacements: 2
+
+The flag was dropped, "X+" was matched literally, and the caller was told the
+pattern is not in the file -- which is false, and sends it to re-read a file
+that was never the problem.
+
+    write_file content="aGVsbG8=" encoding="base64"
+        -> success: true, 8 bytes on disk: 61 47 56 73 62 47 38 3d   ("aGVsbG8=")
+    write_file content="aGVsbG8=" content_encoding="base64"
+        -> success: true, 5 bytes on disk: 68 65 6c 6c 6f            ("hello")
+
+One word apart, both `success: true`, and the first wrote the base64 text into
+the file instead of the bytes it stands for.
 """
 
 ALLOWED_OPS: frozenset[str] = frozenset(
@@ -54,6 +85,17 @@ _REQUIRED: dict[str, list[str]] = {
     "restore": ["path"],
 }
 
+# The fields an op reads beyond its required ones. Kept next to _REQUIRED so a
+# new optional field is one line away from the list that makes it discoverable;
+# adding a handler that reads op_dict.get("thing") without adding it here now
+# makes "thing" a refusal, which is the failure mode that gets noticed.
+_OPTIONAL: dict[str, list[str]] = {
+    "write_file": ["content_encoding"],
+    "replace_text": ["regex", "count"],
+    "insert_after": ["count"],
+    "restore": ["timestamp"],
+}
+
 _PATH_OPS: frozenset[str] = frozenset(
     {
         "write_file",
@@ -99,6 +141,29 @@ def apply_field_aliases(op_dict: dict) -> dict:
     return op_dict
 
 
+def known_fields(op_name: str) -> list[str]:
+    """Every key this op reads, including the alias spellings it accepts."""
+    fields = {"op"}
+    fields.update(_REQUIRED.get(op_name, []))
+    fields.update(_OPTIONAL.get(op_name, []))
+    fields.update(_FIELD_ALIASES.get(op_name, {}))
+    return sorted(fields)
+
+
+def _did_you_mean(unknown: str, known: list[str]) -> str:
+    """The closest accepted name, when one is obviously close."""
+    import difflib
+
+    # Prefix- and suffix-insensitive first: the real misses are use_regex for
+    # regex and encoding for content_encoding, where one name contains the
+    # other. difflib alone rates encoding/content_encoding below its cutoff.
+    for k in known:
+        if k in unknown or unknown in k:
+            return k
+    close = difflib.get_close_matches(unknown, known, n=1, cutoff=0.75)
+    return close[0] if close else ""
+
+
 def validate_ops(ops: list[dict]) -> list[str]:
     """Return list of error strings; empty means valid."""
     if not isinstance(ops, list):
@@ -129,6 +194,21 @@ def validate_ops(ops: list[dict]) -> list[str]:
             continue
 
         apply_field_aliases(op_dict)
+
+        # Names first: a missing required field reported against a call whose
+        # real problem is a typo'd optional one sends the caller after the
+        # wrong thing. The accepted list goes in the message because the `ops`
+        # schema is list[dict] and this is the only place it is discoverable.
+        known = known_fields(op_name)
+        unknown = [k for k in op_dict if k not in known]
+        if unknown:
+            suggestion = _did_you_mean(unknown[0], known)
+            lead = f"did you mean {suggestion}? " if suggestion else ""
+            errors.append(
+                f"{prefix} ({op_name}): unknown field(s) {', '.join(sorted(unknown))} -- "
+                f"{lead}{op_name} accepts: {', '.join(known)}"
+            )
+            continue
 
         accepted = _FIELD_ALIASES.get(op_name, {})
         for field in _REQUIRED.get(op_name, []):
