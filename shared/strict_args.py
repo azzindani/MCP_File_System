@@ -27,7 +27,6 @@ Applied once at server start; no tool body changes.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 
@@ -49,7 +48,12 @@ def enforce_known_arguments(mcp: Any) -> None:
     manager = mcp._tool_manager
     original = manager.call_tool
 
-    async def call_tool(name: str, arguments: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+    async def call_tool(
+        name: str,
+        arguments: dict[str, Any],
+        context: Any = None,
+        convert_result: bool = False,
+    ) -> Any:
         tool = manager.get_tool(name)
         if tool is not None and isinstance(arguments, dict):
             known = sorted((tool.parameters or {}).get("properties", {}))
@@ -62,16 +66,22 @@ def enforce_known_arguments(mcp: Any) -> None:
                     if suggestion
                     else f"{name} accepts: {', '.join(known)}."
                 )
-                return json.dumps(
-                    {
-                        "success": False,
-                        "op": name,
-                        "error": f"{name} does not take {', '.join(unknown)}",
-                        "hint": f"{hint} Accepted: {', '.join(known)}.",
-                        "progress": [],
-                        "token_estimate": 40,
-                    }
-                )
-        return await original(name, arguments, *args, **kwargs)
+                refusal = {
+                    "success": False,
+                    "op": name,
+                    "error": f"{name} does not take {', '.join(unknown)}",
+                    "hint": f"{hint} Accepted: {', '.join(known)}.",
+                    "progress": [],
+                    "token_estimate": 40,
+                }
+                # The server asks for the converted form. Returning the raw dict
+                # -- or worse a JSON string, which the SDK then iterates one
+                # character at a time into 1900 validation errors -- produces a
+                # response no client can read. Convert it exactly as this tool's
+                # own return value would have been.
+                if convert_result:
+                    return tool.fn_metadata.convert_result(refusal)
+                return refusal
+        return await original(name, arguments, context, convert_result)
 
     manager.call_tool = call_tool

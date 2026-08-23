@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from mcp.types import CallToolResult
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_DIR = ROOT / "servers" / "fs_basic"
@@ -37,22 +38,29 @@ for _p in (str(ROOT), str(SERVER_DIR)):
 import server as fs_server  # noqa: E402
 
 
-def call(name: str, arguments: dict) -> dict:
-    """Dispatch through the tool manager, where the enforcement lives.
+def call(name: str, arguments: dict, convert_result: bool = True) -> dict:
+    """Dispatch the way the server does, conversion included.
 
-    Calling the wrapper's `.fn` directly would skip the whole argument layer --
-    the same trap that let a too-narrow annotation pass six of seven tests in a
-    sibling repo.
+    Two layers are easy to test past and both have burned this fleet. Calling
+    the wrapper's `.fn` skips argument validation entirely -- that let a
+    too-narrow annotation pass six of seven tests in a sibling repo. And calling
+    `call_tool` with its *default* convert_result=False skips the result
+    conversion, which is where the first version of this refusal broke: it
+    returned a JSON string, and the SDK iterated it one character at a time into
+    1900 validation errors. Every assertion here goes through the converted
+    path, because that is the one a client sees.
     """
-    result = asyncio.run(fs_server.mcp._tool_manager.call_tool(name, arguments))
-    if isinstance(result, str):
-        try:
-            return json.loads(result)
-        except json.JSONDecodeError:
-            return {"raw": result}
-    if isinstance(result, dict):
-        return result
-    return {"raw": result}
+    result = asyncio.run(
+        fs_server.mcp._tool_manager.call_tool(name, arguments, convert_result=convert_result)
+    )
+    if not convert_result:
+        return result if isinstance(result, dict) else {"raw": result}
+    # Converted, this is the content list the SDK puts straight into a
+    # CallToolResult. Validating it here is the whole point: a bare string
+    # passes json.loads happily and then explodes at the protocol boundary.
+    CallToolResult(content=list(result))
+    assert result and hasattr(result[0], "text"), f"not renderable content: {result!r}"
+    return json.loads(result[0].text)
 
 
 @pytest.fixture
