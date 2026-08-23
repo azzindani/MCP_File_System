@@ -1,4 +1,27 @@
-"""fs_index implementation — VERIFY via SQLite FTS5 index and receipts."""
+"""fs_index implementation — VERIFY via SQLite FTS5 index and receipts.
+
+action=query answers from the SQLite index, which knows only what action=build
+put into it. A query against a directory that has never been built therefore
+returns `success: true, returned: 0` -- exactly what a directory containing
+nothing returns. Round 11's sweep hit this twice and wrote the tool off as
+unreliable ("fs_index kept returning 0 matches even after files existed on
+disk -- ls confirms real contents"), which is the reasonable reading of a
+zero with nothing else in it:
+
+    query  pattern=* path=/workspace/data/ml_advanced_2   -> returned 0
+    query  pattern=*                                      -> returned 6
+    build  path=/workspace/data/ml_advanced_2             -> indexed 8
+    query  pattern=* path=/workspace/data/ml_advanced_2   -> returned 8
+
+Eight files, present the whole time. The empty answer only ever meant "not in
+the index", and the response said `returned: 0` with no root, no build time,
+and no hint. The stale-index warning that does exist fires at 24 hours, so it
+had nothing to say about an index minutes old that simply never covered the
+path.
+
+A zero-result query now reports what the index actually holds under the root
+it filtered on, so "never indexed" and "nothing matches" stop looking alike.
+"""
 
 import sqlite3
 import time
@@ -268,6 +291,18 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         meta_row = conn.execute(
             f"SELECT value FROM {_META_TABLE} WHERE key='last_built'"
         ).fetchone()
+
+        # How much of this root the index covers at all. Fetched here, in the
+        # same connection, because it is the number that tells a zero-result
+        # query apart from an unindexed one.
+        if root_filter:
+            covered_row = conn.execute(
+                f"SELECT COUNT(*) FROM {_FILES_TABLE} WHERE path LIKE ?",
+                (root_filter + "%",),
+            ).fetchone()
+        else:
+            covered_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
+        indexed_under_root = covered_row[0] if covered_row else 0
     finally:
         conn.close()
 
@@ -297,8 +332,12 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         "op": "fs_index",
         "action": "query",
         "pattern": pattern,
+        # Named for the same reason action=list names it: a filtered answer that
+        # does not say what it filtered on cannot be read.
+        "root": root_filter or str(Path.home()),
         "matches": match_list,
         "returned": len(match_list),
+        "indexed_under_root": indexed_under_root,
         "truncated": truncated,
         "progress": progress,
     }
@@ -308,6 +347,23 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         result["hint"] = (
             f"Results capped at {effective_max}. Use a narrower pattern or increase max_results."
         )
+    elif not match_list:
+        built = meta_row[0] if meta_row else "never"
+        where = root_filter or str(Path.home())
+        if indexed_under_root == 0:
+            # The whole point of the fix: this is not "no such file", it is
+            # "this subtree was never indexed", and only action=build fixes it.
+            result["hint"] = (
+                f"Nothing under {where} is in the index, so this is not the same as no such file. "
+                f"Run fs_index action=build path={where} to index it, or fs_query to search the "
+                f"disk directly. Index last built: {built}."
+            )
+        else:
+            result["hint"] = (
+                f"The index holds {indexed_under_root} entr(y/ies) under {where} and none match "
+                f"'{pattern}'. Anything written since {built} is not in it — run fs_index "
+                f"action=build to refresh."
+            )
     result["token_estimate"] = len(str(result)) // 4
     return result
 
