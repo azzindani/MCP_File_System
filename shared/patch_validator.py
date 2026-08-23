@@ -22,6 +22,14 @@ ALLOWED_OPS: frozenset[str] = frozenset(
         "delete_tree_confirm",
         "set_permissions",
         "download",
+        # Every destructive op above takes a snapshot, `fs_manage
+        # action=versions` lists them, and every empty listing says "Snapshots
+        # are created automatically on destructive writes" -- but nothing could
+        # put one back. `restore_version` existed in shared/version_control.py
+        # with no caller outside the tests. The three sibling repos all expose a
+        # restore; this server took the snapshots and offered no way to use
+        # them.
+        "restore",
     }
 )
 
@@ -42,6 +50,8 @@ _REQUIRED: dict[str, list[str]] = {
     "delete_tree_request": ["path"],
     "delete_tree_confirm": ["token"],
     "set_permissions": ["path", "mode"],
+    # timestamp is optional: with none given, restore takes the newest snapshot.
+    "restore": ["path"],
 }
 
 _PATH_OPS: frozenset[str] = frozenset(
@@ -58,6 +68,7 @@ _PATH_OPS: frozenset[str] = frozenset(
         "delete_tree_request",
         "set_permissions",
         "download",
+        "restore",
     }
 )
 

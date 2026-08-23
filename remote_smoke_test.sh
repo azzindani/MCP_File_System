@@ -206,4 +206,29 @@ else
 fi
 
 echo
-echo "ALL 6 TOOLS + boundary regression PASSED against $DOMAIN"
+echo "===== the snapshots are usable, not just taken ====="
+echo "Every destructive op takes a snapshot and fs_manage action=versions lists them,"
+echo "but until now nothing could put one back: restore_version had no caller. This"
+echo "walks the whole round trip against the deployed endpoint -- edit, list, restore --"
+echo "and feeds the listing's own timestamp straight into the restore."
+
+RESTORE_PATH="/tmp/remote-smoke-test/restore_me.txt"
+RESULT=$(call 70 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"$RESTORE_PATH\",\"content\":\"keep me\\n\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' || fail "could not seed the restore fixture: $RESULT"
+
+RESULT=$(call 71 fs_write "{\"ops\":[{\"op\":\"replace_text\",\"path\":\"$RESTORE_PATH\",\"find\":\"keep me\",\"replace\":\"oops\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "edited the file, which takes a snapshot" || fail "replace_text -> $RESULT"
+
+RESULT=$(call 72 fs_manage "{\"action\":\"versions\",\"path\":\"$RESTORE_PATH\"}")
+echo "$RESULT" | grep -q 'timestamp' && pass "the version listing carries the timestamp a restore takes" || fail "listing has no timestamp field: $RESULT"
+RESULT=$(call 73 fs_write "{\"ops\":[{\"op\":\"restore\",\"path\":\"$RESTORE_PATH\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "restore op put the snapshot back" || fail "restore -> $RESULT"
+
+RESULT=$(call 74 fs_read "{\"path\":\"$RESTORE_PATH\",\"mode\":\"content\"}")
+echo "$RESULT" | grep -q 'keep me' && pass "the file holds its pre-edit content again" || fail "restore did not bring the content back: $RESULT"
+
+RESULT=$(call 75 fs_write "{\"ops\":[{\"op\":\"append_file\",\"path\":\"$RESTORE_PATH\",\"content\":\"appended\\n\"}]}")
+echo "$RESULT" | grep -q '\.bak' && pass "append_file now reports a backup, like every other content op" || fail "append_file still reports no backup: $RESULT"
+
+echo
+echo "ALL 6 TOOLS + boundary regression + restore round trip PASSED against $DOMAIN"

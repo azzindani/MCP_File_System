@@ -61,12 +61,16 @@ def versions(p: Path) -> int:
 
 @pytest.fixture
 def edited(tmp_path):
-    """A file with a real history: one snapshot and two receipt entries."""
+    """A file with a real history: two snapshots and two receipt entries.
+
+    One snapshot per write. append_file used to take none -- it was the only
+    content op here that did not -- so this fixture expected one.
+    """
     f = tmp_path / "a.txt"
     f.write_text("hello\n", encoding="utf-8")
     write("append_file", path=str(f), content="1\n")
     write("replace_text", path=str(f), find="hello", replace="HI")
-    assert versions(f) == 1, "fixture needs a snapshot to lose"
+    assert versions(f) == 2, "fixture needs snapshots to lose"
     assert receipts(f) == ["append_file", "replace_text"]
     return f
 
@@ -74,7 +78,7 @@ def edited(tmp_path):
 class TestRenameCarriesTheHistory:
     def test_the_snapshot_is_still_restorable(self, edited, tmp_path):
         write("rename", path=str(edited), name="b.txt")
-        assert versions(tmp_path / "b.txt") == 1
+        assert versions(tmp_path / "b.txt") == 2
 
     def test_the_receipt_log_follows_and_records_the_rename(self, edited, tmp_path):
         write("rename", path=str(edited), name="b.txt")
@@ -88,14 +92,14 @@ class TestRenameCarriesTheHistory:
         )
 
     def test_the_count_carried_is_reported(self, edited):
-        assert write("rename", path=str(edited), name="b.txt")["snapshots_carried"] == 1
+        assert write("rename", path=str(edited), name="b.txt")["snapshots_carried"] == 2
 
 
 class TestMoveCarriesTheHistory:
     def test_the_snapshot_and_log_arrive_at_the_destination(self, edited, tmp_path):
         dst = tmp_path / "sub" / "c.txt"
-        assert write("move", path=str(edited), dst=str(dst))["snapshots_carried"] == 1
-        assert versions(dst) == 1
+        assert write("move", path=str(edited), dst=str(dst))["snapshots_carried"] == 2
+        assert versions(dst) == 2
         assert receipts(dst) == ["append_file", "replace_text", "move"]
 
     def test_a_destination_with_its_own_history_keeps_it(self, edited, tmp_path):
@@ -119,7 +123,7 @@ class TestCopyIsANewFile:
         # source keeps everything it had.
         assert receipts(dst) == ["copy"]
         assert receipts(edited) == ["append_file", "replace_text"]
-        assert versions(edited) == 1
+        assert versions(edited) == 2
 
 
 class TestSetPermissionsIsRecorded:
