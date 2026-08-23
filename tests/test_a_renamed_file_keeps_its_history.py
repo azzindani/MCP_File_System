@@ -36,6 +36,8 @@ for p in (str(ROOT), str(ROOT / "servers" / "fs_basic")):
 
 import engine  # noqa: E402
 
+from shared import version_control as vc  # noqa: E402
+
 
 def write(op: str, **kw) -> dict:
     """One op through fs_write, returning that op's own result."""
@@ -131,3 +133,44 @@ class TestSetPermissionsIsRecorded:
     def test_the_previous_mode_is_reported(self, edited):
         edited.chmod(0o644)
         assert write("set_permissions", path=str(edited), mode="600")["mode_before"] == "0o644"
+
+
+class TestALegacyNameCannotBeAnotherFilesSnapshot:
+    """Reading the siblings' extension-less name reopened the hole on this side.
+
+    This repo writes `{stem}_{ts}{ext}.bak` precisely so that report.csv and
+    report.docx do not share a history. But `_patterns` also matched the
+    siblings' `{stem}_{ts}.bak` unconditionally, so a snapshot written by
+    another server for the .docx was still offered as a version of the .csv --
+    and restore_version takes the newest candidate. The three siblings now write
+    the extension too; the compatibility match survives only where the stem is
+    unambiguous.
+    """
+
+    def test_a_legacy_snapshot_is_offered_when_nothing_shares_the_stem(self, tmp_path):
+        f = tmp_path / "solo.csv"
+        f.write_text("current\n", encoding="utf-8")
+        vdir = tmp_path / ".mcp_versions"
+        vdir.mkdir()
+        (vdir / "solo_2026-08-01T00-00-00Z.bak").write_text("older\n", encoding="utf-8")
+        assert len(vc.list_versions(str(f))) == 1
+        assert vc.restore_version(str(f), "2026-08-01T00-00-00Z")["success"] is True
+        assert f.read_text(encoding="utf-8") == "older\n"
+
+    def test_a_legacy_snapshot_is_withheld_when_a_namesake_exists(self, tmp_path):
+        csv = tmp_path / "report.csv"
+        csv.write_text("a,b\n1,2\n", encoding="utf-8")
+        (tmp_path / "report.docx").write_bytes(b"PK\x03\x04")
+        vdir = tmp_path / ".mcp_versions"
+        vdir.mkdir()
+        (vdir / "report_2026-08-01T00-00-00Z.bak").write_bytes(b"PK\x03\x04elsewhere")
+        assert vc.list_versions(str(csv)) == []
+        assert vc.restore_version(str(csv), "2026-08-01T00-00-00Z")["success"] is False
+        assert csv.read_text(encoding="utf-8") == "a,b\n1,2\n"
+
+    def test_this_repos_own_snapshots_are_unaffected(self, tmp_path):
+        csv = tmp_path / "report.csv"
+        csv.write_text("a,b\n1,2\n", encoding="utf-8")
+        (tmp_path / "report.docx").write_bytes(b"PK\x03\x04")
+        vc.snapshot(str(csv))
+        assert len(vc.list_versions(str(csv))) == 1
