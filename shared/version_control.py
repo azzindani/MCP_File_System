@@ -132,8 +132,26 @@ def restore_version(file_path: str, timestamp: str) -> dict:
         }
 
 
+def _timestamp_of(src: Path, bak: Path) -> str:
+    """The stamp `restore_version` matches on, read off the snapshot's name."""
+    name = bak.name
+    prefix = f"{src.stem}_"
+    if name.startswith(prefix):
+        name = name[len(prefix) :]
+    for tail in (f"{src.suffix}.bak", ".bak"):
+        if tail and name.endswith(tail):
+            return name[: -len(tail)]
+    return name
+
+
 def list_versions(file_path: str) -> list[dict]:
-    """Return sorted list of available snapshots for file_path."""
+    """Return sorted list of available snapshots for file_path, oldest first.
+
+    Each entry carries the `timestamp` that `restore` takes, so a caller can
+    feed a listing straight into a restore. Without it the listing named a
+    `backup` path and a `created` ISO stamp, and neither is what the restore
+    matches on -- the caller had to parse the stamp back out of the filename.
+    """
     try:
         src = Path(file_path)
         versions = []
@@ -142,6 +160,7 @@ def list_versions(file_path: str) -> list[dict]:
                 stat = bak.stat()
                 versions.append(
                     {
+                        "timestamp": _timestamp_of(src, bak),
                         "backup": str(bak),
                         "size_bytes": stat.st_size,
                         "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),

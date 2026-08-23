@@ -21,8 +21,10 @@ from _basic_helpers import (
     fetch_url,
     info,
     is_url,
+    list_versions,
     ok,
     resolve_path,
+    restore_version,
     size_kb,
     snapshot,
     validate_ops,
@@ -223,6 +225,7 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
         "delete_tree_confirm": _op_delete_confirm,
         "set_permissions": _op_set_permissions,
         "download": _op_download,
+        "restore": _op_restore,
     }
     handler = handlers.get(name)
     if not handler:
@@ -365,16 +368,97 @@ def _op_append_file(op_dict: dict, dry_run: bool) -> dict:
         r["token_estimate"] = len(str(r)) // 4
         return r
 
+    # Every other content op here snapshots first -- write_file, replace_text,
+    # insert_after, delete_lines, patch_lines, download -- and append_file was
+    # the one that did not, while declaring a `backup` field that was always
+    # None. Append is the least reversible op to leave without one: it is the
+    # canonical non-idempotent write, so a client retrying a call that timed out
+    # doubles the text, and nothing records how long the file was before.
+    # Appending to a file that does not exist yet has nothing to preserve.
+    backup = snapshot(str(path)) if path.is_file() else ""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(content)
-    append_receipt(str(path), "fs_write", "append_file", "appended", None)
+    append_receipt(str(path), "fs_write", "append_file", "appended", backup or None)
     r = {
         "success": True,
         "op": "append_file",
         "path": str(path),
-        "backup": None,
+        "backup": backup or None,
         "progress": [ok(f"Appended to {path.name}")],
+    }
+    r["token_estimate"] = len(str(r)) // 4
+    return r
+
+
+def _op_restore(op_dict: dict, dry_run: bool) -> dict:
+    """Put a snapshot back over the live file.
+
+    Every destructive op here snapshots first, `fs_manage action=versions` lists
+    what it took, and every empty listing ends "Snapshots are created
+    automatically on destructive writes" -- but nothing could use one.
+    `restore_version` sat in shared/version_control.py with no caller outside
+    the tests, so this server took the snapshots and offered no way back. All
+    three sibling repos expose a restore.
+
+    With no timestamp, the newest snapshot is used, which is what a caller
+    undoing the write they just made wants. The live file is snapshotted first,
+    so a restore is itself undoable -- the same counter-snapshot the sibling
+    repos take.
+    """
+    path = resolve_path(op_dict["path"])
+    timestamp = str(op_dict.get("timestamp", "")).strip()
+
+    if not path.is_file():
+        return _error(
+            "restore",
+            f"File not found: {path.name}",
+            "Restore writes over a file that exists. Check the path.",
+        )
+
+    available = list_versions(str(path))
+    if not available:
+        return _error(
+            "restore",
+            f"No snapshots found for {path.name}",
+            "Use fs_manage with action=versions to see what a file has.",
+        )
+    if not timestamp:
+        timestamp = available[-1]["timestamp"]
+
+    if dry_run:
+        r: dict = {
+            "success": True,
+            "op": "restore",
+            "path": str(path),
+            "timestamp": timestamp,
+            "would_change": True,
+            "progress": [info(f"Would restore {path.name} from {timestamp}")],
+        }
+        r["token_estimate"] = len(str(r)) // 4
+        return r
+
+    counter = snapshot(str(path))
+    result = restore_version(str(path), timestamp)
+    if not result.get("success"):
+        return _error(
+            "restore",
+            str(result.get("error", "restore failed")),
+            f"Available timestamps: {', '.join(v['timestamp'] for v in available[-5:])}",
+        )
+
+    append_receipt(str(path), "fs_write", "restore", f"restored from {timestamp}", counter or None)
+    r = {
+        "success": True,
+        "op": "restore",
+        "path": str(path),
+        "timestamp": timestamp,
+        "restored_from": result.get("from_backup", ""),
+        "backup": counter or None,
+        "progress": [
+            info("Counter-snapshot taken", Path(counter).name if counter else ""),
+            ok(f"Restored {path.name}", timestamp),
+        ],
     }
     r["token_estimate"] = len(str(r)) // 4
     return r

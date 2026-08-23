@@ -125,7 +125,7 @@ def fs_read(
     )
 )
 def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
-    """Write, edit, move, copy files. Delete requires confirmation token."""
+    """Write, edit, move, copy, restore files. Delete needs a confirm token."""
     return engine.fs_write(ops=ops, dry_run=dry_run)
 
 
