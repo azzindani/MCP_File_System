@@ -77,6 +77,10 @@ def atomic_write(path: Path, content: str) -> None:
         suffix=path.suffix,
         mode="w",
         encoding="utf-8",
+        # Verbatim: the line ops hand back text they read from the file, so
+        # translating "\n" to os.linesep here would rewrite every line ending
+        # in a file the caller only asked to edit one line of.
+        newline="",
     ) as tmp:
         tmp.write(content)
         tmp_path = tmp.name

@@ -519,7 +519,7 @@ def _op_replace_text(op_dict: dict, dry_run: bool) -> dict:
     count: int = int(op_dict.get("count", 0))  # 0 = all
 
     try:
-        content = path.read_text(encoding="utf-8", errors="replace")
+        content = path.open(encoding="utf-8", errors="replace", newline="").read()
     except Exception as e:
         return _error("replace_text", str(e), "Check file permissions.")
 
@@ -578,7 +578,7 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
     count: int = int(op_dict.get("count", 1))
 
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.open(encoding="utf-8", errors="replace", newline="").read()
     except Exception as e:
         return _error("insert_after", str(e), "Check file permissions.")
 
@@ -684,7 +684,7 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
     end: int = int(op_dict["end_line"])
 
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.open(encoding="utf-8", errors="replace", newline="").read()
     except Exception as e:
         return _error("delete_lines", str(e), "Check file permissions.")
 
@@ -733,7 +733,7 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
     patch: str = op_dict["content"]
 
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.open(encoding="utf-8", errors="replace", newline="").read()
     except Exception as e:
         return _error("patch_lines", str(e), "Check file permissions.")
 
@@ -745,7 +745,19 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
     s = start
     e = min(end, total)
 
+    # patch_lines replaces lines, so its replacement has to end a line. Without
+    # this, content given as "PATCHED" merged into whatever followed --
+    # "line one\nPATCHEDline three\n", three lines silently becoming two under
+    # success: true. insert_after has always terminated its own content this
+    # way; this was the sibling that did not.
+    #
+    # The terminator is copied from the region being replaced rather than added
+    # unconditionally, so patching the final line of a file that ends without a
+    # newline does not quietly give it one.
     patch_lines = patch.splitlines(keepends=True)
+    replaced_ends_line = bool(lines[e - 1].endswith(("\n", "\r"))) if e > s else False
+    if patch_lines and replaced_ends_line and not patch_lines[-1].endswith(("\n", "\r")):
+        patch_lines[-1] += "\n"
     new_lines = lines[:s] + patch_lines + lines[e:]
     backup = snapshot(str(path))
 
