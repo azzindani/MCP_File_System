@@ -60,7 +60,7 @@ async def version(request: Request) -> JSONResponse:
     )
 )
 def fs_query(
-    pattern: str,
+    pattern: str = "",
     path: str = "",
     type_: str = "any",
     content: str = "",
@@ -177,7 +177,12 @@ def fs_archive(
     format_: str = "zip",
     dry_run: bool = False,
 ) -> dict:
-    """Create or extract zip/tar.gz archives. Uses Python stdlib only."""
+    # Three sweeps running, the first call to this tool passed the archive as
+    # `target` and the payload as `path` -- the natural reading of the two
+    # names. The swap message added earlier explains it, but a caller should not
+    # have to fail once to learn the contract, and half the 80 characters was
+    # being spent on an implementation note nobody can act on.
+    """Create or extract zip/tar.gz. path=archive, target=what goes in it."""
     return engine.fs_archive(
         action=action,
         path=path,

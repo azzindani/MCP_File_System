@@ -13,7 +13,7 @@ from _basic_write import run_fs_write
 
 
 def fs_query(
-    pattern: str,
+    pattern: str = "",
     path: str = "",
     type_: str = "any",
     content: str = "",

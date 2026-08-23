@@ -26,7 +26,7 @@ from _basic_helpers import (
 
 
 def run_fs_query(
-    pattern: str,
+    pattern: str = "",
     path: str = "",
     type_: str = "any",
     content: str = "",
@@ -87,11 +87,19 @@ def _fs_query(
     progress = []
 
     # --- input validation ---
+    # The docstring offers name *or* content search, so a content-only call is a
+    # documented call: content="needle", grep_mode=True, no pattern. It used to
+    # be refused by the schema before reaching any of this, as a raw pydantic
+    # "pattern Field required" naming an argument the caller had deliberately
+    # left out. Searching every name is the right default once the caller has
+    # said what they want found inside.
+    if not pattern and content:
+        pattern = "*"
     if not pattern:
         return _error(
             "fs_query",
-            "pattern must not be empty",
-            "Provide a glob pattern such as '*.py' or 'report_*'.",
+            "give a name pattern, a content string, or both",
+            "Use pattern='*.py' to search by name, or content='needle' to search inside files.",
         )
     _type_aliases = {
         "directory": "dir",
