@@ -24,6 +24,7 @@ from shared.file_utils import (  # noqa: E402
     get_default_output_dir,
     is_url,
     resolve_path,
+    size_kb,
 )
 from shared.patch_validator import ALLOWED_OPS, validate_ops  # noqa: E402
 from shared.platform_utils import (  # noqa: E402
@@ -61,6 +62,7 @@ def _error(op: str, error: str, hint: str = "", extra: dict | None = None) -> di
 
 
 __all__ = [
+    "size_kb",
     "_error",
     "logger",
     # shared helpers

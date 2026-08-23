@@ -174,3 +174,37 @@ class TestAnOpTakesTheNameItsSiblingsUse:
         r = engine.fs_write(ops=[{"op": "copy", "dst": str(tmp_path / "b.txt")}])
         assert r["success"] is False
         assert "src" in r["error"] and "path" in r["error"], r["error"]
+
+
+class TestASizeThatExistsIsNotReportedAsZero:
+    """A 900-byte file read as "0 KB" in the delete confirmation.
+
+    _get_size_kb used integer division, so everything under 1024 bytes became 0
+    -- and that number appears in "Permanently deletes 1 item(s) (0 KB). Cannot
+    be undone." A sweep hit the same shape on the ML side, where two real
+    34-byte snapshots listed as size_kb 0.0, which is what an empty backup looks
+    like and is the number someone decides a restore on.
+    """
+
+    @pytest.mark.parametrize(
+        "n_bytes,expected_nonzero",
+        [(0, False), (1, True), (34, True), (900, True), (1024, True), (5000, True)],
+    )
+    def test_only_an_empty_file_reports_zero(self, n_bytes, expected_nonzero):
+        from shared.file_utils import size_kb
+
+        assert (size_kb(n_bytes) > 0) is expected_nonzero, n_bytes
+
+    def test_a_kilobyte_still_reads_as_one(self):
+        from shared.file_utils import size_kb
+
+        assert size_kb(1024) == 1.0
+        assert size_kb(1536) == 1.5
+
+    def test_the_delete_warning_does_not_say_zero_for_a_real_file(self, tmp_path):
+        small = tmp_path / "small.txt"
+        small.write_text("x" * 900, encoding="utf-8")
+        r = engine.fs_write(ops=[{"op": "delete_request", "path": str(small)}])
+        assert r["success"] is True, r.get("error")
+        assert r["targets"][0]["size_kb"] > 0, r["targets"][0]
+        assert "(0 KB)" not in r["warning"], r["warning"]

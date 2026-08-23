@@ -21,6 +21,7 @@ from _basic_helpers import (
     is_url,
     ok,
     resolve_path,
+    size_kb,
     snapshot,
     validate_ops,
     validate_token,
@@ -851,10 +852,10 @@ def _op_set_permissions(op_dict: dict, dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _get_size_kb(path: Path) -> int:
+def _get_size_kb(path: Path) -> float:
     try:
         if path.is_file():
-            return path.stat().st_size // 1024
+            return size_kb(path.stat().st_size)
         total = 0
         for p in path.rglob("*"):
             try:
@@ -862,6 +863,6 @@ def _get_size_kb(path: Path) -> int:
                     total += p.stat().st_size
             except OSError:
                 pass
-        return total // 1024
+        return size_kb(total)
     except Exception:
-        return 0
+        return 0.0
