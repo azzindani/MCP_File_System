@@ -117,3 +117,18 @@ def get_default_output_dir(input_path: str | None = None) -> Path:
     downloads = Path.home() / "Downloads"
     downloads.mkdir(parents=True, exist_ok=True)
     return downloads
+
+
+def size_kb(n_bytes: int) -> float:
+    """Size in KB, rounded so a file that exists never reports as 0.
+
+    Integer division sends everything under 1024 bytes to 0, which is what an
+    empty file looks like. That number carries real weight here: the delete
+    confirmation says "Permanently deletes 1 item(s) (0 KB). Cannot be undone."
+    -- and a 900-byte file reads as nothing worth keeping. Small files keep
+    enough decimals to stay non-zero; only a genuinely empty one returns 0.0.
+    """
+    if n_bytes <= 0:
+        return 0.0
+    kb = n_bytes / 1024
+    return round(kb, 1) if kb >= 0.1 else round(kb, 3)

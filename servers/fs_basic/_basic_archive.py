@@ -10,6 +10,7 @@ from _basic_helpers import (
     info,
     ok,
     resolve_path,
+    size_kb,
 )
 
 from shared.version_control import snapshot
@@ -175,8 +176,8 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
         with tarfile.open(arc, "w:gz") as tf:
             tf.add(str(src), arcname=src.name)
 
-    size_kb = arc.stat().st_size // 1024
-    progress.append(ok(f"Created {arc.name}", f"{size_kb} KB"))
+    arc_size_kb = size_kb(arc.stat().st_size)
+    progress.append(ok(f"Created {arc.name}", f"{arc_size_kb} KB"))
 
     result = {
         "success": True,
@@ -186,7 +187,7 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
         "source": str(src),
         "format": format_,
         "files_archived": len(items),
-        "size_kb": size_kb,
+        "size_kb": arc_size_kb,
         "progress": progress,
     }
     result["token_estimate"] = len(str(result)) // 4
