@@ -110,6 +110,66 @@ def snapshot(file_path: str) -> str:
         return ""
 
 
+# A tree snapshot is a zip, so one file holds the whole directory and restoring
+# it is `fs_archive action=extract`. The cap keeps a delete of something huge
+# from stalling on a copy nobody asked for; over it, the caller is told rather
+# than silently left without a net.
+MAX_TREE_SNAPSHOT_BYTES = 256 * 1024 * 1024
+
+
+def tree_size(dir_path: Path) -> int:
+    """Bytes under dir_path, ignoring the snapshot directory itself."""
+    total = 0
+    for p in dir_path.rglob("*"):
+        if VERSIONS_DIRNAME in p.parts:
+            continue
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def snapshot_tree(dir_path: str) -> tuple[str, str]:
+    """Archive a directory before it is deleted. Returns (path, note).
+
+    `snapshot()` returns "" for anything that is not a file, so a recursive
+    delete -- the most destructive op on this server -- ran `shutil.rmtree` with
+    no backup at all, while deleting a single file snapshotted it first. The
+    response said so only by carrying `backup: null`, which reads like every
+    other op's "there was nothing there before".
+
+    An empty note means the archive was written. A non-empty note says why it
+    was not, so the caller can be told before the tree goes.
+    """
+    try:
+        src = Path(dir_path)
+        if not src.is_dir():
+            return "", "not a directory"
+        size = tree_size(src)
+        if size > MAX_TREE_SNAPSHOT_BYTES:
+            return "", (
+                f"{size // (1024 * 1024)} MB exceeds the "
+                f"{MAX_TREE_SNAPSHOT_BYTES // (1024 * 1024)} MB tree-snapshot limit"
+            )
+        vdir = _versions_dir_for(src)
+        vdir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+        stem = f"{src.name}_{ts}.tree"
+        archive = vdir / f"{stem}.zip"
+        counter = 1
+        while archive.exists():
+            stem = f"{src.name}_{ts}_{counter}.tree"
+            archive = vdir / f"{stem}.zip"
+            counter += 1
+        # make_archive appends its own .zip, so hand it the stem.
+        made = shutil.make_archive(str(vdir / stem), "zip", root_dir=str(src))
+        return str(made), ""
+    except Exception as e:
+        return "", str(e)
+
+
 def restore_version(file_path: str, timestamp: str) -> dict:
     """Restore a snapshot identified by its UTC timestamp string."""
     try:

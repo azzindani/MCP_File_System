@@ -45,6 +45,7 @@ from shared.version_control import (  # noqa: E402
     list_versions,
     restore_version,
     snapshot,
+    snapshot_tree,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,4 +105,5 @@ __all__ = [
     "list_versions",
     "restore_version",
     "snapshot",
+    "snapshot_tree",
 ]
