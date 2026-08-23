@@ -231,4 +231,32 @@ RESULT=$(call 75 fs_write "{\"ops\":[{\"op\":\"append_file\",\"path\":\"$RESTORE
 echo "$RESULT" | grep -q '\.bak' && pass "append_file now reports a backup, like every other content op" || fail "append_file still reports no backup: $RESULT"
 
 echo
+echo "===== an op field this server does not take is refused, not dropped ====="
+echo "strict_args guards each tool's own arguments, but fs_write declares two -- ops"
+echo "and dry_run -- so everything that varies a write sits one level below it. A"
+echo "misspelled flag used to be discarded: use_regex made 'X+' a literal search and"
+echo "the caller was told the pattern is missing, and encoding= wrote the base64 text"
+echo "into the file instead of the bytes it stands for, both under success: true."
+
+FIELD_PATH="/tmp/remote-smoke-test/op_fields.txt"
+RESULT=$(call 76 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"$FIELD_PATH\",\"content\":\"aXXbXXc\\n\"}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' || fail "could not seed the op-field fixture: $RESULT"
+
+RESULT=$(call 77 fs_write "{\"ops\":[{\"op\":\"replace_text\",\"path\":\"$FIELD_PATH\",\"find\":\"X+\",\"replace\":\"-\",\"use_regex\":true}]}")
+if echo "$RESULT" | grep -q 'use_regex'; then
+  echo "$RESULT" | grep -q "accepts:" && pass "use_regex refused, and the refusal lists what replace_text accepts" || fail "refused without naming the accepted fields: $RESULT"
+else
+  fail "use_regex was dropped instead of refused -> $RESULT"
+fi
+
+RESULT=$(call 78 fs_read "{\"path\":\"$FIELD_PATH\",\"mode\":\"content\"}")
+echo "$RESULT" | grep -q 'aXXbXXc' && pass "the refused call left the file untouched" || fail "the file changed under a refused call: $RESULT"
+
+RESULT=$(call 79 fs_write "{\"ops\":[{\"op\":\"replace_text\",\"path\":\"$FIELD_PATH\",\"find\":\"X+\",\"replace\":\"-\",\"regex\":true}]}")
+echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "the documented spelling still applies the regex" || fail "regex=true -> $RESULT"
+
+RESULT=$(call 80 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"/tmp/remote-smoke-test/op_fields.bin\",\"content\":\"aGVsbG8=\",\"encoding\":\"base64\"}]}")
+echo "$RESULT" | grep -q 'content_encoding' && pass "encoding= refused, and the refusal names content_encoding" || fail "encoding= was dropped instead of refused -> $RESULT"
+
+echo
 echo "ALL 6 TOOLS + boundary regression + restore round trip PASSED against $DOMAIN"
