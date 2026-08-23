@@ -27,6 +27,7 @@ from _basic_helpers import (
     restore_version,
     size_kb,
     snapshot,
+    snapshot_tree,
     validate_ops,
     validate_token,
     warn,
@@ -142,7 +143,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         result["token_estimate"] = len(str(result)) // 4
         return result
 
-    token = create_token(targets)
+    token, superseded = create_token(targets)
     result = {
         "success": True,
         "op": "delete_pending",
@@ -155,6 +156,12 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         "next_step": (f"Call fs_write with op=delete_confirm and token={token} to proceed."),
         "progress": progress,
     }
+    # Asking twice for the same targets is one intent, not two. Say which token
+    # stopped working, so a caller holding the earlier one is not left to
+    # discover it at confirm time.
+    if superseded:
+        result["superseded_tokens"] = superseded
+        progress.append(warn(f"Replaced {len(superseded)} earlier request(s) for the same targets"))
     result["token_estimate"] = len(str(result)) // 4
     return result
 
@@ -174,12 +181,26 @@ def _op_delete_confirm(op_dict: dict, dry_run: bool) -> dict:
     backups: list[str] = []
     progress: list[dict] = []
 
+    skipped: list[str] = []
+    unbacked: list[str] = []
+
     for t in targets:
         p = Path(t["path"])
         if not p.exists():
+            skipped.append(str(p))
             progress.append(warn(f"{p.name} already gone, skipping"))
             continue
-        backup = snapshot(str(p))
+        # `snapshot()` returns "" for anything that is not a file, so a tree
+        # delete used to run rmtree with no backup at all while a single-file
+        # delete snapshotted its victim first -- the most destructive op on the
+        # server was the only one with no way back.
+        if p.is_dir():
+            backup, why = snapshot_tree(str(p))
+            if not backup:
+                unbacked.append(p.name)
+                progress.append(warn(f"No snapshot of {p.name}: {why}"))
+        else:
+            backup = snapshot(str(p))
         if backup:
             backups.append(backup)
         if not dry_run:
@@ -199,6 +220,19 @@ def _op_delete_confirm(op_dict: dict, dry_run: bool) -> dict:
         "backups": backups,
         "progress": progress,
     }
+    # A confirm whose targets had all vanished answered success: true with an
+    # empty `deleted` list and nothing else -- the flag said the delete happened
+    # and the list said it did not. Name what was skipped, and what went without
+    # a snapshot, in the response rather than only in the progress log.
+    if skipped:
+        result["skipped"] = skipped
+    if unbacked:
+        result["deleted_without_snapshot"] = unbacked
+        result["hint"] = (
+            f"No snapshot was taken of {', '.join(unbacked)} — that delete cannot be undone."
+        )
+    if not deleted and skipped:
+        result["hint"] = "Nothing was deleted: every target was already gone."
     result["token_estimate"] = len(str(result)) // 4
     return result
 
