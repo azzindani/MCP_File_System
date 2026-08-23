@@ -49,10 +49,13 @@ def write(op: str, **kw) -> dict:
 
 
 def tree(tmp_path: Path) -> Path:
+    # Bytes, not text: write_text turns "\n" into "\r\n" on Windows, so a test
+    # comparing the archived bytes against b"alpha\n" fails there for a reason
+    # that has nothing to do with archiving.
     d = tmp_path / "project"
     (d / "nested").mkdir(parents=True)
-    (d / "a.txt").write_text("alpha\n", encoding="utf-8")
-    (d / "nested" / "b.txt").write_text("beta\n", encoding="utf-8")
+    (d / "a.txt").write_bytes(b"alpha\n")
+    (d / "nested" / "b.txt").write_bytes(b"beta\n")
     return d
 
 
@@ -163,5 +166,13 @@ class TestARepeatedRequestReplacesThePendingOne:
         f.write_text("x\n", encoding="utf-8")
         for _ in range(5):
             write("delete_request", path=str(f))
-        live = [e for e in confirm_store._store.values() if str(f) in str(e["targets"])]
+        # Compare the stored paths themselves. `str(f) in str(entry)` looked
+        # equivalent and is not: repr() escapes the backslashes in a Windows
+        # path, so the substring never matched and the check passed vacuously
+        # by finding nothing at all.
+        live = [
+            e
+            for e in confirm_store._store.values()
+            if any(t.get("path") == str(f) for t in e["targets"])
+        ]
         assert len(live) == 1, live
