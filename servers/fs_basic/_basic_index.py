@@ -60,7 +60,7 @@ def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
         )
 
     if action == "receipt":
-        return _action_receipt(path)
+        return _action_receipt(path, max_results)
     if action == "build":
         return _action_build(path)
     if action == "query":
@@ -397,7 +397,7 @@ def _action_clear(path: str) -> dict:
     return result
 
 
-def _action_receipt(path: str) -> dict:
+def _action_receipt(path: str, max_results: int) -> dict:
     if not path:
         return _error(
             "fs_index",
@@ -408,15 +408,36 @@ def _action_receipt(path: str) -> dict:
     file_path = resolve_path(path)
     history = read_receipt_log(str(file_path))
 
+    # query and list have always honoured max_results; receipt was the one
+    # action that ignored it, so a request for 5 came back with all 14 -- a
+    # response contradicting the argument that produced it, and unbounded for a
+    # file with a long history.
+    effective_max = max(0, min(max_results, get_max_results()))
+    shown = history[-effective_max:] if effective_max else []
+    truncated = len(shown) < len(history)
+
     result: dict = {
         "success": True,
         "op": "fs_index",
         "action": "receipt",
         "file": str(file_path),
-        "history": history,
-        "count": len(history),
-        "progress": [ok(f"Receipt for {file_path.name}", f"{len(history)} entries")],
+        "history": shown,
+        "count": len(shown),
+        "total": len(history),
+        "truncated": truncated,
+        "progress": [
+            ok(
+                f"Receipt for {file_path.name}",
+                f"{len(shown)} of {len(history)} entries"
+                if truncated
+                else f"{len(history)} entries",
+            )
+        ],
     }
+    if truncated:
+        result["hint"] = (
+            f"Showing the {len(shown)} most recent of {len(history)} entries. Raise max_results for more."
+        )
     if not history:
         result["hint"] = "No receipt found. Operations via fs_write automatically create receipts."
     result["token_estimate"] = len(str(result)) // 4
