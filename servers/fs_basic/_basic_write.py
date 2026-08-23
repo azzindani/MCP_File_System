@@ -231,7 +231,10 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
         # A remote caller shares no filesystem with this server, so the path it
         # just got back means nothing to it. When the file landed under a
         # publicly served MCP_OUTPUT_DIR, hand back a URL it can actually use.
-        target = result.get("dst") or result.get("path")
+        # move and copy report their destination as `dst`; rename reports it as
+        # `new_path` and keeps `path` as the name the file had *before*. Reading
+        # `path` there hands back a URL for a file that no longer exists.
+        target = result.get("dst") or result.get("new_path") or result.get("path")
         if result.get("success") and target:
             before = len(result)
             attach_public_url(result, Path(target))
@@ -707,20 +710,27 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
             "lines_removed": e - s,
             "would_change": True,
             "backup": backup,
-            "progress": [info(f"Would delete lines {s}–{e} from {path.name}")],
+            # start_line/end_line are 0-based and end-exclusive, so "lines 2-3"
+            # reads as two lines and removes one. Say the count, which is what
+            # the caller can actually check against the file.
+            "progress": [
+                info(f"Would delete {e - s} line(s) from {path.name}", f"lines [{s}, {e})")
+            ],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     atomic_write(path, "".join(new_lines))
-    append_receipt(str(path), "fs_write", "delete_lines", f"removed lines {s}–{e}", backup)
+    append_receipt(
+        str(path), "fs_write", "delete_lines", f"removed {e - s} line(s) at [{s}, {e})", backup
+    )
     r = {
         "success": True,
         "op": "delete_lines",
         "path": str(path),
         "lines_removed": e - s,
         "backup": backup,
-        "progress": [ok(f"Deleted lines {s}–{e} from {path.name}")],
+        "progress": [ok(f"Deleted {e - s} line(s) from {path.name}", f"lines [{s}, {e})")],
     }
     r["token_estimate"] = len(str(r)) // 4
     return r

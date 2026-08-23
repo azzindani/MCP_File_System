@@ -61,7 +61,31 @@ _PATH_OPS: frozenset[str] = frozenset(
     }
 )
 
+# A census of the sixteen ops: ten of them call the file they act on `path`.
+# Only move and copy call it `src`, so `path` is the name a caller reaches for,
+# and two independent callers -- a sweep model and this repo's own test author
+# -- wrote copy(path=..., dst=...) and were refused. The tool schema is an
+# opaque list[dict], so nothing advertises the difference until the call fails.
+#
+# Accepting the majority spelling costs nothing: `src` stays documented and both
+# work. The alias resolves to the canonical field before validation, so no op
+# handler changes.
+_FIELD_ALIASES: dict[str, dict[str, str]] = {
+    "move": {"path": "src"},
+    "copy": {"path": "src"},
+    "rename": {"new_name": "name", "dst": "name"},
+}
+
 _MAX_OPS = 50
+
+
+def apply_field_aliases(op_dict: dict) -> dict:
+    """Fill a canonical field from the spelling the other ops use."""
+    aliases = _FIELD_ALIASES.get(op_dict.get("op", ""), {})
+    for given, canonical in aliases.items():
+        if canonical not in op_dict and given in op_dict:
+            op_dict[canonical] = op_dict[given]
+    return op_dict
 
 
 def validate_ops(ops: list[dict]) -> list[str]:
@@ -93,9 +117,14 @@ def validate_ops(ops: list[dict]) -> list[str]:
             )
             continue
 
+        apply_field_aliases(op_dict)
+
+        accepted = _FIELD_ALIASES.get(op_name, {})
         for field in _REQUIRED.get(op_name, []):
             if field not in op_dict:
-                errors.append(f"{prefix} ({op_name}): missing required field '{field}'")
+                also = [g for g, c in accepted.items() if c == field]
+                extra = f" (also accepted: {', '.join(sorted(also))})" if also else ""
+                errors.append(f"{prefix} ({op_name}): missing required field '{field}'{extra}")
             elif op_name in _PATH_OPS and field == "path":
                 val = op_dict[field]
                 if not isinstance(val, str) or not val.strip():
