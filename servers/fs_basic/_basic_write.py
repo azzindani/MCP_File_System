@@ -463,6 +463,10 @@ def _op_append_file(op_dict: dict, dry_run: bool) -> dict:
         "success": True,
         "op": "append_file",
         "path": str(path),
+        # Same reason as delete_lines: the response was identical on a retry
+        # ("Appended to af_test.txt" both times) while the text landed twice.
+        # The resulting size is what tells the two calls apart.
+        "size_bytes": path.stat().st_size,
         "backup": backup or None,
         "progress": [ok(f"Appended to {path.name}")],
     }
@@ -810,6 +814,7 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
         "op": "insert_after",
         "path": str(path),
         "insertions": inserted,
+        "total_lines": len(new_lines),
         "backup": backup,
         "progress": [ok(f"Inserted after {inserted} match(es) in {path.name}")],
     }
@@ -914,6 +919,12 @@ def _op_delete_lines(op_dict: dict, dry_run: bool) -> dict:
         "op": "delete_lines",
         "path": str(path),
         "lines_removed": e - s,
+        # The delta alone cannot tell two calls apart. A retried delete_lines
+        # removes a *second* line and answers lines_removed: 1 both times, so a
+        # client re-sending a call that timed out has no way to see that it
+        # destroyed different content. The resulting count differs, and is what
+        # a caller can check against what it expected.
+        "total_lines": len(new_lines),
         "backup": backup,
         "progress": [ok(f"Deleted {e - s} line(s) from {path.name}", f"lines [{s}, {e})")],
     }
@@ -976,6 +987,7 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
         "op": "patch_lines",
         "path": str(path),
         "lines_replaced": e - s,
+        "total_lines": len(new_lines),
         "backup": backup,
         "progress": [ok(f"Patched lines {s}–{e} in {path.name}")],
     }
