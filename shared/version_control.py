@@ -269,3 +269,40 @@ def carry_snapshots(src_path: str, dst_path: str) -> int:
     except Exception:
         return moved
     return moved
+
+
+def discard_snapshot_if_unchanged(backup: str, live: str | Path) -> str:
+    """Drop a snapshot whose file the operation turned out not to change.
+
+    A snapshot has to be taken before the write, because nothing knows yet
+    whether the write will change anything. What was missing was the other
+    half: throwing it away when the answer turns out to be "nothing".
+
+        fs_write write_file path=f.txt content="same"   x3
+        -> 2 snapshots, both byte-identical to the live file
+
+    That is the retry case. A client re-sending a write_file or a download
+    whose first attempt timed out pays a full copy of the file for each
+    attempt, and nothing in this fleet prunes .mcp_versions.
+
+    Comparing after the write rather than guessing before it is what makes it
+    safe: a backup byte-identical to the file now on disk cannot restore
+    anything the file does not already hold, so deleting it loses nothing. A
+    delete's backup is never touched, because the file it would restore is not
+    there to compare against. Returns the backup path, or "" if discarded.
+    """
+    if not backup:
+        return ""
+    b, live_path = Path(backup), Path(live)
+    try:
+        if not (b.is_file() and live_path.is_file()):
+            return backup
+        if b.stat().st_size != live_path.stat().st_size:
+            return backup
+        if b.read_bytes() != live_path.read_bytes():
+            return backup
+        b.unlink()
+        return ""
+    except Exception:
+        # Never let tidying up fail an operation that already succeeded.
+        return backup
