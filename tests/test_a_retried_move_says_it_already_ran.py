@@ -113,3 +113,64 @@ class TestARetriedCopy:
         r = write("copy", src=str(src), dst=str(dst))
         assert r["success"] is False
         assert "already" in r["hint"].lower(), r["hint"]
+
+
+class TestARetryIsVisibleInTheAnswer:
+    """A mutating op must report the state it produced, not only its delta.
+
+    The sweep's sharpest observation in phase 2: `delete_lines` run twice with
+    identical arguments removes a *second* line, and both calls answer
+    `lines_removed: 1`. The responses are byte-identical while the file is not,
+    so a client re-sending a call that timed out has no way to see it destroyed
+    different content. `append_file` was the same -- "Appended to af_test.txt"
+    both times, with the text landed twice.
+
+    These ops cannot be made idempotent; appending twice is what appending twice
+    means. What they can do is answer with the resulting count, which differs
+    between the calls and is what a caller can check against its expectation.
+    """
+
+    def test_delete_lines_reports_the_resulting_count(self, tmp_path):
+        f = tmp_path / "lines.txt"
+        f.write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
+        first = write("delete_lines", path=str(f), start_line=1, end_line=2)
+        second = write("delete_lines", path=str(f), start_line=1, end_line=2)
+        assert first["total_lines"] == 3, first
+        assert second["total_lines"] == 2, second
+        assert first != second, "a retry answered identically while removing another line"
+
+    def test_delete_lines_matches_the_file(self, tmp_path):
+        f = tmp_path / "lines.txt"
+        f.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+        r = write("delete_lines", path=str(f), start_line=0, end_line=1)
+        assert r["total_lines"] == len(f.read_text(encoding="utf-8").splitlines())
+
+    def test_append_reports_the_resulting_size(self, tmp_path):
+        f = tmp_path / "log.txt"
+        f.write_text("start\n", encoding="utf-8")
+        first = write("append_file", path=str(f), content="more\n")
+        second = write("append_file", path=str(f), content="more\n")
+        assert first["size_bytes"] == 11, first
+        assert second["size_bytes"] == 16, second
+        assert first["size_bytes"] != second["size_bytes"]
+
+    def test_append_size_matches_the_file(self, tmp_path):
+        f = tmp_path / "log.txt"
+        f.write_text("start\n", encoding="utf-8")
+        r = write("append_file", path=str(f), content="more\n")
+        assert r["size_bytes"] == f.stat().st_size
+
+    def test_insert_after_reports_the_resulting_count(self, tmp_path):
+        f = tmp_path / "lines.txt"
+        f.write_text("alpha\nbeta\n", encoding="utf-8")
+        first = write("insert_after", path=str(f), after_pattern="alpha", content="new\n")
+        second = write("insert_after", path=str(f), after_pattern="alpha", content="new\n")
+        assert first["total_lines"] == 3, first
+        assert second["total_lines"] == 4, second
+
+    def test_patch_lines_reports_the_resulting_count(self, tmp_path):
+        f = tmp_path / "lines.txt"
+        f.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+        r = write("patch_lines", path=str(f), start_line=0, end_line=1, content="one\ntwo\n")
+        assert r["total_lines"] == 4, r
+        assert r["total_lines"] == len(f.read_text(encoding="utf-8").splitlines())
