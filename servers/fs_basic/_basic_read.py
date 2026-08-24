@@ -105,6 +105,28 @@ def _fs_read(
 # ---------------------------------------------------------------------------
 
 
+def _line_ending_of(lines: list[str]) -> str:
+    """Which ending the returned lines actually carry.
+
+    "mixed" is a real state and worth naming rather than rounding to whichever
+    kind came first: a file half-converted by an editor is exactly the sort of
+    thing a caller is trying to find out about.
+    """
+    kinds = set()
+    for line in lines:
+        if line.endswith("\r\n"):
+            kinds.add("crlf")
+        elif line.endswith("\n"):
+            kinds.add("lf")
+        elif line.endswith("\r"):
+            kinds.add("cr")
+    if not kinds:
+        return "none"
+    if len(kinds) > 1:
+        return "mixed"
+    return kinds.pop()
+
+
 def _is_binary(path: Path) -> bool:
     try:
         chunk = path.read_bytes()[:_BINARY_CHUNK]
@@ -137,7 +159,17 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
 
     max_lines = get_max_lines()
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        # newline="" turns off universal-newline translation. Without it, the
+        # read rewrites every "\r\n" to "\n", so a CRLF file came back with
+        # endings it does not have on disk -- under a plain success, with no
+        # mention of the substitution. The md5 of what fs_read returned matched
+        # the file only after `tr -d '\r'`, which is a read tool answering a
+        # question about bytes with different bytes.
+        #
+        # open() rather than read_text(newline=""): the keyword is 3.13+, and
+        # this project pins 3.12.
+        with path.open(encoding="utf-8", errors="replace", newline="") as fh:
+            text = fh.read()
     except Exception as e:
         return _error("fs_read", f"Cannot read file: {e}", "Check file encoding or permissions.")
     all_lines = text.splitlines(keepends=True)
@@ -159,6 +191,10 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
         "end_line": e,
         "total_lines": total_lines,
         "truncated": truncated,
+        # Now that the endings are the file's own, say which they are: a caller
+        # comparing a hash, or writing the lines back somewhere, needs to know
+        # whether the "\r" it is looking at came from the file or from itself.
+        "line_ending": _line_ending_of(all_lines),
         "progress": [ok(f"Read {len(sliced)} lines from {path.name}")],
     }
     if truncated:

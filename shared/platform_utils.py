@@ -33,6 +33,18 @@ def get_max_context_lines() -> int:
     return 2 if is_constrained_mode() else 5
 
 
+def get_max_grep_hits() -> int:
+    """Total matching lines one fs_query grep response may carry.
+
+    max_results bounds the number of *files* a grep returns, and nothing
+    bounded the lines inside them. Two files matching 15,101 lines each came
+    back as a 5.5 MB response reporting truncated: false, because the flag only
+    ever described the file list. A common word in one large CSV is enough to
+    do that, so the budget is on lines, across the whole response.
+    """
+    return 40 if is_constrained_mode() else 200
+
+
 def get_platform() -> str:
     if sys.platform == "win32":
         return "windows"
