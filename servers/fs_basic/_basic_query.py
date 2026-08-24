@@ -13,6 +13,7 @@ from _basic_helpers import (
     _error,
     get_content_backend,
     get_max_context_lines,
+    get_max_grep_hits,
     get_max_results,
     get_name_backend,
     info,
@@ -421,8 +422,30 @@ def _build_grep_response(
                     truncated = idx < len(name_matches) - 1
                     break
 
+    # The file list was bounded above; the lines inside each file were not. A
+    # term appearing on 15,101 lines of two CSVs produced a 5.5 MB response that
+    # said truncated: false, because `truncated` only ever described the file
+    # list. Bound the lines too, and let either kind of trimming set the flag.
+    hit_budget = get_max_grep_hits()
+    hits_found = sum(len(e.get("hits", [])) for e in matches_out)
+    hits_dropped = False
+    if hits_found > hit_budget:
+        remaining = hit_budget
+        for entry in matches_out:
+            entry_hits = entry.get("hits", [])
+            entry["hits_total"] = len(entry_hits)
+            if len(entry_hits) > remaining:
+                entry["hits"] = entry_hits[:remaining]
+                hits_dropped = True
+            remaining = max(0, remaining - len(entry_hits))
+        matches_out = [e for e in matches_out if e.get("hits")]
+
     total = len(matches_out)
-    progress.append(ok(f"grep found {total} file(s) with matches"))
+    hits_returned = sum(len(e.get("hits", [])) for e in matches_out)
+    truncated = truncated or hits_dropped
+    progress.append(
+        ok(f"grep found {total} file(s) with matches", f"{hits_returned} line(s) returned")
+    )
 
     result: dict = {
         "success": True,
@@ -433,11 +456,19 @@ def _build_grep_response(
         "content_pattern": content,
         "matches": matches_out,
         "returned": total,
+        "hits_returned": hits_returned,
+        "hits_found": hits_found,
         "truncated": truncated,
         "backend_used": content_backend,
         "progress": progress,
     }
-    if truncated:
+    if hits_dropped:
+        result["hint"] = (
+            f"{hits_found} matching line(s) found, {hits_returned} returned "
+            f"(line budget {hit_budget}). Narrow the content pattern, or use fs_read "
+            "on one file to page through its matches."
+        )
+    elif truncated:
         result["hint"] = (
             f"Results capped at {effective_max}. "
             "Narrow the content pattern or directory to see all matches."
