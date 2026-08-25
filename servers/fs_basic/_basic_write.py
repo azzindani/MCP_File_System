@@ -9,6 +9,7 @@ from pathlib import Path
 
 from _basic_helpers import (
     ALLOWED_OPS,
+    MAX_TREE_SNAPSHOT_BYTES,
     _error,
     append_receipt,
     atomic_write,
@@ -30,6 +31,7 @@ from _basic_helpers import (
     size_kb,
     snapshot,
     snapshot_tree,
+    tree_size,
     validate_ops,
     validate_token,
     warn,
@@ -156,12 +158,71 @@ def _file_count(path: Path) -> int:
         return 0
 
 
+def _no_snapshot_reason(path: Path) -> str:
+    """Why the confirm step will not be able to keep a copy of this target, or "".
+
+    Asked at request time, because that is when the caller decides. The confirm
+    step already takes the snapshot and reports it; by then the answer is no
+    longer useful for choosing whether to go ahead.
+
+    Mirrors snapshot()/snapshot_tree(): a file is always copied, a directory is
+    zipped unless it is over the tree-snapshot cap. Both can still fail on the
+    day for a reason no inspection predicts -- a full disk, a read-only parent --
+    so the confirm response stays the record of what was actually kept, and this
+    is only ever consulted for the sentence shown beforehand.
+    """
+    if not path.is_dir():
+        return ""
+    try:
+        size = tree_size(path)
+    except OSError as exc:  # unreadable subtree; do not promise a copy
+        return str(exc)
+    if size > MAX_TREE_SNAPSHOT_BYTES:
+        return (
+            f"{size // (1024 * 1024)} MB exceeds the "
+            f"{MAX_TREE_SNAPSHOT_BYTES // (1024 * 1024)} MB tree-snapshot limit"
+        )
+    return ""
+
+
+def _delete_warning(scope: str, total_size_kb: float, n: int, unbacked: list[str]) -> str:
+    """The sentence the caller decides on. It has to be true.
+
+    It used to read "Permanently deletes N item(s) (X KB). Cannot be undone."
+    for every delete on this server -- while the confirm step snapshotted each
+    file and zipped each tree into .mcp_versions/ first, which an earlier round
+    added precisely so a recursive delete had a way back.
+
+    So the most consequential sentence the server prints was false, and false in
+    both directions at once: a caller deleting something sensitive was told the
+    bytes were gone when a full copy remained beside them, and a caller who
+    needed the file was scared off an operation that was reversible all along.
+    Neither is a caller reading it wrong.
+    """
+    head = f"Deletes {scope} ({total_size_kb} KB)."
+    if not unbacked:
+        kept = "A copy is kept" if n == 1 else "A copy of each is kept"
+        return (
+            f"{head} {kept} under .mcp_versions/ first, so this can be undone -- "
+            "fs_manage action=versions lists them."
+        )
+    if len(unbacked) == 1:
+        which = f"No copy is kept of {unbacked[0]}"
+    else:
+        which = f"No copy is kept of {len(unbacked)} of them ({', '.join(unbacked)})"
+    # Only mention the others when there are some: "anything else is copied"
+    # beside a single unrecoverable target reads as though a copy exists.
+    rest = "" if len(unbacked) == n else " Anything else is copied under .mcp_versions/ first."
+    return f"{head} {which}, so that part cannot be undone.{rest}"
+
+
 def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
     targets: list[dict] = []
     progress: list[dict] = []
     total_size_kb = 0
     total_files = 0
     tree_requested = False
+    unbacked: list[str] = []
 
     for op_dict in delete_ops:
         path_str = op_dict["path"]
@@ -190,6 +251,12 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
             # "Permanently deletes 1 item(s)" for a directory counted the
             # argument, not the damage: a tree of forty files read as one.
             t["files"] = files
+        why = _no_snapshot_reason(path)
+        t["recoverable"] = not why
+        if why:
+            t["no_snapshot_reason"] = why
+            unbacked.append(path.name)
+            progress.append(warn(f"No copy will be kept of {path.name}", why))
         targets.append(t)
         detail = f"{size_kb} KB, {files} file(s)" if is_dir else f"{size_kb} KB"
         progress.append(info(f"Located {path.name}", detail))
@@ -199,7 +266,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
     scope = f"{n} item(s)"
     if total_files != n:
         scope = f"{n} item(s) holding {total_files} file(s)"
-    warning = f"Permanently deletes {scope} ({total_size_kb} KB). Cannot be undone."
+    warning = _delete_warning(scope, total_size_kb, n, unbacked)
 
     if dry_run:
         result: dict = {
