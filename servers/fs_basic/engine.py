@@ -22,6 +22,7 @@ def fs_query(
     include_meta: bool = False,
     follow_symlinks: bool = False,
     max_results: int = 50,
+    regex: bool = False,
 ) -> dict:
     return run_fs_query(
         pattern=pattern,
@@ -33,6 +34,7 @@ def fs_query(
         include_meta=include_meta,
         follow_symlinks=follow_symlinks,
         max_results=max_results,
+        regex=regex,
     )
 
 
