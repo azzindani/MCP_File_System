@@ -45,6 +45,17 @@ def get_max_grep_hits() -> int:
     return 40 if is_constrained_mode() else 200
 
 
+def get_max_usage_walk() -> int:
+    """How many entries `fs_manage action=disk_usage` will walk under a path.
+
+    disk_usage took a path, echoed it back, and answered with the numbers from
+    `shutil.disk_usage` -- the mount's, identical for every path on the volume.
+    Reporting the path's own size means walking it, and a path can be the whole
+    volume, so the walk stops here and says it stopped.
+    """
+    return 5_000 if is_constrained_mode() else 50_000
+
+
 def get_platform() -> str:
     if sys.platform == "win32":
         return "windows"

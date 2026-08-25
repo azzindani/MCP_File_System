@@ -6,6 +6,7 @@ from pathlib import Path
 
 from _basic_helpers import (
     _error,
+    get_max_usage_walk,
     get_platform,
     list_versions,
     ok,
@@ -80,6 +81,32 @@ def _fs_manage(action: str, path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _walk_usage(target: Path, budget: int) -> tuple[int, int, bool]:
+    """Bytes and file count under `target`, stopping at `budget` entries."""
+    if target.is_file():
+        try:
+            return target.stat().st_size, 1, False
+        except OSError:
+            return 0, 0, False
+    total = 0
+    files = 0
+    seen = 0
+    try:
+        for p in target.rglob("*"):
+            seen += 1
+            if seen > budget:
+                return total, files, True
+            try:
+                if p.is_file() and not p.is_symlink():
+                    total += p.stat().st_size
+                    files += 1
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return total, files, False
+
+
 def _action_disk_usage(path: str) -> dict:
     target = resolve_path(path or str(Path.home()))
     try:
@@ -89,11 +116,32 @@ def _action_disk_usage(path: str) -> dict:
             "fs_manage", f"Cannot get disk usage: {e}", "Ensure the path exists and is accessible."
         )
 
+    # The action takes a path, echoed it back, and reported the numbers for the
+    # *volume* the path sits on -- the same 206.9 GB for every directory on the
+    # machine, under a progress line reading "Disk usage for fsr2". A caller
+    # pointing it at a folder to find out how big the folder is got a confident
+    # answer to a question it did not ask, and `size`, `storage` and `space` are
+    # all aliases for this action, so that is the likeliest thing to be asking.
+    #
+    # Both numbers are worth having, so both are reported and each one says
+    # which it is. The walk is bounded: a path can be the whole volume.
+    budget = get_max_usage_walk()
+    path_bytes, path_files, walk_capped = _walk_usage(target, budget)
+
     result: dict = {
         "success": True,
         "op": "fs_manage",
         "action": "disk_usage",
         "path": str(target),
+        "path_bytes": path_bytes,
+        "path_mb": round(path_bytes / 1e6, 3),
+        "path_files": path_files,
+        "path_walk_complete": not walk_capped,
+        "volume_total_bytes": usage.total,
+        "volume_used_bytes": usage.used,
+        "volume_free_bytes": usage.free,
+        # The old spellings stay: they are what the volume numbers were called
+        # and removing them would break every caller that reads them.
         "total_bytes": usage.total,
         "used_bytes": usage.used,
         "free_bytes": usage.free,
@@ -101,8 +149,18 @@ def _action_disk_usage(path: str) -> dict:
         "used_gb": round(usage.used / 1e9, 2),
         "free_gb": round(usage.free / 1e9, 2),
         "used_percent": round(usage.used / usage.total * 100, 1) if usage.total else 0,
-        "progress": [ok(f"Disk usage for {target.name}")],
+        "progress": [
+            ok(
+                f"{target.name} holds {round(path_bytes / 1e6, 3)} MB in {path_files} file(s)",
+                f"volume: {round(usage.used / 1e9, 2)} of {round(usage.total / 1e9, 2)} GB used",
+            )
+        ],
     }
+    if walk_capped:
+        result["hint"] = (
+            f"Stopped after {budget} entries, so path_bytes counts only part of "
+            f"{target.name}. The volume figures are complete."
+        )
     result["token_estimate"] = len(str(result)) // 4
     return result
 

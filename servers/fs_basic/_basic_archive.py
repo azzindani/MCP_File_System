@@ -254,7 +254,14 @@ def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dic
     with zipfile.ZipFile(arc, "r") as zf:
         zf.extractall(out_dir)
 
-    progress.append(ok(f"Extracted {len(names)} files to {out_dir.name}"))
+    # "Extracted 3 files" counted the directory entries in the archive too, so
+    # a two-file archive under one folder reported three files -- the same
+    # number the info line above correctly calls "entries".
+    dirs = sum(1 for n in names if n.endswith("/"))
+    files = len(names) - dirs
+    progress.append(
+        ok(f"Extracted {len(names)} entries to {out_dir.name}", f"{files} file(s), {dirs} dir(s)")
+    )
     result = {
         "success": True,
         "op": "fs_archive",
@@ -262,6 +269,8 @@ def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dic
         "archive": str(arc),
         "target": str(out_dir),
         "extracted": len(names),
+        "extracted_files": files,
+        "extracted_dirs": dirs,
         "progress": progress,
     }
     result["token_estimate"] = len(str(result)) // 4
@@ -306,8 +315,13 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
     out_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(arc, "r:gz") as tf:
         tf.extractall(out_dir, filter="data")
-
-    progress.append(ok(f"Extracted {len(members)} files to {out_dir.name}"))
+        # Same count, same correction as the zip side: a tar lists its
+        # directories as members, and they are not files.
+        dirs = sum(1 for m in tf.getmembers() if m.isdir())
+    files = len(members) - dirs
+    progress.append(
+        ok(f"Extracted {len(members)} entries to {out_dir.name}", f"{files} file(s), {dirs} dir(s)")
+    )
     result = {
         "success": True,
         "op": "fs_archive",
@@ -315,6 +329,8 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
         "archive": str(arc),
         "target": str(out_dir),
         "extracted": len(members),
+        "extracted_files": files,
+        "extracted_dirs": dirs,
         "progress": progress,
     }
     result["token_estimate"] = len(str(result)) // 4
