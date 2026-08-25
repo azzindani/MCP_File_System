@@ -36,6 +36,7 @@ def run_fs_query(
     include_meta: bool = False,
     follow_symlinks: bool = False,
     max_results: int = 50,
+    regex: bool = False,
 ) -> dict:
     try:
         return _fs_query(
@@ -48,6 +49,7 @@ def run_fs_query(
             include_meta,
             follow_symlinks,
             max_results,
+            regex,
         )
     except ValueError as e:
         return _error(
@@ -84,6 +86,7 @@ def _fs_query(
     include_meta: bool,
     follow_symlinks: bool,
     max_results: int,
+    regex: bool = False,
 ) -> dict:
     progress = []
 
@@ -151,7 +154,21 @@ def _fs_query(
 
     # --- content filter ---
     if content:
-        is_regex = _looks_like_regex(content)
+        is_regex = regex
+        if is_regex:
+            # Compile once, here, so an unusable pattern is an error rather than
+            # a silent zero. Both matchers wrap their body in `except Exception`
+            # and return "no match", so `content="foo(bar"` used to search every
+            # file, fail to compile in each one, and report success with nothing
+            # found -- indistinguishable from a needle that is genuinely absent.
+            try:
+                re.compile(content)
+            except re.error as exc:
+                return _error(
+                    "fs_query",
+                    f"content is not a valid regular expression: {exc}",
+                    "Drop regex=True to search for it as literal text, or fix the pattern.",
+                )
         if grep_mode:
             cb = get_content_backend()
             return _build_grep_response(
@@ -197,6 +214,8 @@ def _fs_query(
         "backend_used": backend,
         "progress": progress,
     }
+    if content:
+        result["content_is_regex"] = is_regex
     if truncated:
         result["hint"] = (
             f"Use fs_query with a narrower pattern or increase max_results "
@@ -210,6 +229,15 @@ def _fs_query(
             result["hint"] = (
                 f"No file is named exactly '{pattern}'. pattern is a glob, not a substring — "
                 f"try '*{pattern}*' to match anywhere in the name."
+            )
+        elif content and not is_regex and _looks_like_regex(content):
+            # The needle holds characters a pattern would read specially, and it
+            # was searched for literally. Say which way it was read, because the
+            # opposite reading is the one that used to happen silently.
+            result["hint"] = (
+                f"'{content}' was searched for as literal text. If it was meant as a "
+                "pattern, pass regex=True; otherwise search without the content filter "
+                "first to confirm what is there."
             )
         elif content:
             result["hint"] = (
@@ -264,9 +292,25 @@ def _name_search(
 # ---------------------------------------------------------------------------
 
 
+_METACHARACTERS = re.compile(r"[\\.*+?^${}()\[\]|]")
+
+
 def _looks_like_regex(pattern: str) -> bool:
-    """Heuristic: if pattern contains regex metacharacters, treat as regex."""
-    return bool(re.search(r"[\\.*+?^${}()\[\]|]", pattern))
+    """Whether this needle contains characters a regex would read specially.
+
+    This used to *decide* whether `content` was a regex, and that question
+    cannot be answered from the string. "Desktop,99+,7.77" is a literal line out
+    of a CSV; read as a pattern, `9+` means "one or more nines" and the search
+    returned nothing, under success:true, for text that was demonstrably in the
+    file. Every needle holding a `.` -- a filename, a version, a number -- was
+    silently a pattern too, matching more than asked rather than less.
+
+    The caller is the only one who knows which they meant, and `fs_query` had no
+    parameter for them to say. Now it does, and this is only used to explain an
+    empty result: if a literal search found nothing and the needle reads like a
+    pattern, that is worth saying once rather than leaving the caller to wonder.
+    """
+    return bool(_METACHARACTERS.search(pattern))
 
 
 def _file_contains(file_path: Path, pattern: str, is_regex: bool) -> bool:
@@ -454,6 +498,9 @@ def _build_grep_response(
         "pattern": pattern,
         "root": str(root),
         "content_pattern": content,
+        # Which way the needle was read. A zero that does not say this is the
+        # defect this field exists to close.
+        "content_is_regex": is_regex,
         "matches": matches_out,
         "returned": total,
         "hits_returned": hits_returned,
@@ -479,6 +526,11 @@ def _build_grep_response(
         result["hint"] = (
             f"Results capped at {effective_max}. "
             "Narrow the content pattern or directory to see all matches."
+        )
+    elif not total and not is_regex and _looks_like_regex(content):
+        result["hint"] = (
+            f"'{content}' was searched for as literal text. If it was meant as a "
+            "pattern, pass regex=True."
         )
     result["token_estimate"] = len(str(result)) // 4
     return result

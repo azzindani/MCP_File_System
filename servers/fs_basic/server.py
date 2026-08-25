@@ -72,8 +72,9 @@ def fs_query(
     follow_symlinks: bool = False,
     max_results: int = 50,
     type: str = "",
+    regex: bool = False,
 ) -> dict:
-    """Locate files by name/content. grep_mode returns matching lines."""
+    """Find files by name/content. content is literal unless regex=True."""
     return engine.fs_query(
         pattern=pattern,
         path=path,
@@ -84,6 +85,7 @@ def fs_query(
         include_meta=include_meta,
         follow_symlinks=follow_symlinks,
         max_results=max_results,
+        regex=regex,
     )
 
 
