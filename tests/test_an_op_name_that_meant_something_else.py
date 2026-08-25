@@ -179,8 +179,14 @@ class TestTheResponseNamesTheOpThatWasCalled:
         assert "2 file(s)" in r["warning"], r["warning"]
 
     def test_a_single_file_warning_stays_plain(self, victim):
+        # What this is about is the *scope* clause: one file must not pick up
+        # the "holding N file(s)" wording a tree needs. It used to assert the
+        # whole opening of the sentence, which pinned "Permanently ... Cannot
+        # be undone" -- wording that was false, and that a later fix had to
+        # change. See test_the_warning_said_it_could_not_be_undone.
         r = write("delete_request", path=str(victim))
-        assert r["warning"].startswith("Permanently deletes 1 item(s) (")
+        assert "1 item(s) (" in r["warning"], r["warning"]
+        assert "holding" not in r["warning"], r["warning"]
         assert "files" not in r["targets"][0]
 
 

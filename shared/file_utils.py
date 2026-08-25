@@ -123,10 +123,10 @@ def size_kb(n_bytes: int) -> float:
     """Size in KB, rounded so a file that exists never reports as 0.
 
     Integer division sends everything under 1024 bytes to 0, which is what an
-    empty file looks like. That number carries real weight here: the delete
-    confirmation says "Permanently deletes 1 item(s) (0 KB). Cannot be undone."
-    -- and a 900-byte file reads as nothing worth keeping. Small files keep
-    enough decimals to stay non-zero; only a genuinely empty one returns 0.0.
+    empty file looks like. That number carries real weight here: it is the size
+    quoted in the delete confirmation ("Deletes 1 item(s) (0 KB) ...") -- and a
+    900-byte file reads as nothing worth keeping. Small files keep enough
+    decimals to stay non-zero; only a genuinely empty one returns 0.0.
     """
     if n_bytes <= 0:
         return 0.0

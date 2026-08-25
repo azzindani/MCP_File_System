@@ -48,12 +48,14 @@ from shared.platform_utils import (  # noqa: E402
 from shared.progress import fail, info, ok, undo, warn  # noqa: E402
 from shared.receipt import append_receipt, carry_receipt, read_receipt_log  # noqa: E402
 from shared.version_control import (  # noqa: E402
+    MAX_TREE_SNAPSHOT_BYTES,
     carry_snapshots,
     discard_snapshot_if_unchanged,
     list_versions,
     restore_version,
     snapshot,
     snapshot_tree,
+    tree_size,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,4 +120,6 @@ __all__ = [
     "snapshot",
     "discard_snapshot_if_unchanged",
     "snapshot_tree",
+    "tree_size",
+    "MAX_TREE_SNAPSHOT_BYTES",
 ]
