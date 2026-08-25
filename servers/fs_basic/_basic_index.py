@@ -24,6 +24,7 @@ it filtered on, so "never indexed" and "nothing matches" stop looking alike.
 """
 
 import sqlite3
+import stat as stat_mod
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -145,15 +146,32 @@ def _action_build(path: str) -> dict:
 
     progress.append(info(f"Indexing {root.name}"))
 
+    # stat() follows symlinks, so a link was stored as type "file" carrying the
+    # size and mtime of whatever it pointed at -- while fs_manage
+    # action=symlink_info, in this same server, answers is_symlink: true for the
+    # same path. Two tools describing one path two ways, and the one that says
+    # "file" is the one a caller reads first. A broken link was worse: stat()
+    # raises, and the `continue` dropped it from the index without a word, so a
+    # dangling symlink was indistinguishable from a path that is not there.
+    #
+    # lstat() describes the link itself, and the type says which kind of thing
+    # each row is.
+    by_type = {"file": 0, "dir": 0, "symlink": 0}
     for p in root.rglob("*"):
         try:
-            st = p.stat()
-            ftype = "dir" if p.is_dir() else "file"
+            st = p.lstat()
+            if p.is_symlink():
+                ftype = "symlink"
+            elif stat_mod.S_ISDIR(st.st_mode):
+                ftype = "dir"
+            else:
+                ftype = "file"
             cur.execute(
                 f"INSERT OR REPLACE INTO {_FILES_TABLE} (path, name, size, mtime, type) "
                 f"VALUES (?, ?, ?, ?, ?)",
                 (str(p), p.name, st.st_size, st.st_mtime, ftype),
             )
+            by_type[ftype] += 1
             count += 1
         except OSError:
             continue
@@ -179,6 +197,11 @@ def _action_build(path: str) -> dict:
         "action": "build",
         "root": str(root),
         "indexed": count,
+        # "indexed: 18" was every entry under the root, and stats called the
+        # same number file_count. Say what the 18 are made of, once, here.
+        "files": by_type["file"],
+        "dirs": by_type["dir"],
+        "symlinks": by_type["symlink"],
         "last_built": ts_now,
         "elapsed_seconds": elapsed,
         "db_path": str(_db_path()),
@@ -384,25 +407,54 @@ def _action_stats() -> dict:
     conn = _get_conn()
     try:
         count_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
+        type_rows = conn.execute(
+            f"SELECT type, COUNT(*) FROM {_FILES_TABLE} GROUP BY type"
+        ).fetchall()
         meta_rows = conn.execute(f"SELECT key, value FROM {_META_TABLE}").fetchall()
     finally:
         conn.close()
 
     meta = {r[0]: r[1] for r in meta_rows}
-    file_count = count_row[0] if count_row else 0
+    entry_count = count_row[0] if count_row else 0
+    by_type = {r[0]: r[1] for r in type_rows}
     db_size = _db_path().stat().st_size if _db_path().exists() else 0
+
+    # A cleared index reported built: true beside file_count: 0 and the
+    # timestamp of the build whose entries had just been removed -- three
+    # answers describing an index that no longer holds anything.
+    if not entry_count and not meta.get("last_built"):
+        result = {
+            "success": True,
+            "op": "fs_index",
+            "action": "stats",
+            "built": False,
+            "entry_count": 0,
+            "file_count": 0,
+            "db_path": str(_db_path()),
+            "db_size_bytes": db_size,
+            "hint": "Run fs_index with action=build to create the index.",
+            "progress": [info("Index is empty")],
+        }
+        result["token_estimate"] = len(str(result)) // 4
+        return result
 
     result = {
         "success": True,
         "op": "fs_index",
         "action": "stats",
         "built": True,
-        "file_count": file_count,
+        # file_count counted every row, directories and symlinks included, under
+        # a name that says otherwise. entry_count is that total; file_count now
+        # counts files.
+        "entry_count": entry_count,
+        "file_count": by_type.get("file", 0),
+        "dir_count": by_type.get("dir", 0),
+        "symlink_count": by_type.get("symlink", 0),
         "last_built": meta.get("last_built"),
         "indexed_root": meta.get("root"),
         "db_path": str(_db_path()),
         "db_size_bytes": db_size,
-        "progress": [ok(f"Index has {file_count} entries")],
+        "progress": [ok(f"Index has {entry_count} entries")],
     }
     result["token_estimate"] = len(str(result)) // 4
     return result
@@ -437,6 +489,13 @@ def _action_clear(path: str) -> dict:
             (str(root) + "%",),
         )
         removed = cur.rowcount
+        left_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
+        remaining = left_row[0] if left_row else 0
+        # Clearing the last entries leaves nothing an index could be said to
+        # hold, so the build stamp goes with them. Left behind, it made stats
+        # answer built: true and last_built: <that build> for an empty table.
+        if not remaining:
+            conn.execute(f"DELETE FROM {_META_TABLE} WHERE key IN ('last_built', 'root')")
         conn.commit()
     finally:
         conn.close()
@@ -447,7 +506,8 @@ def _action_clear(path: str) -> dict:
         "action": "clear",
         "root": str(root),
         "cleared": removed,
-        "progress": [ok(f"Cleared {removed} entries for {root.name}")],
+        "remaining": remaining,
+        "progress": [ok(f"Cleared {removed} entries for {root.name}", f"{remaining} left")],
     }
     result["token_estimate"] = len(str(result)) // 4
     return result
