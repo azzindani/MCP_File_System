@@ -462,11 +462,18 @@ def _build_grep_response(
         "backend_used": content_backend,
         "progress": progress,
     }
+    # grep mode bounds two different things and the caller only names one of
+    # them. max_results=5 came back with 200 matching lines, honouring the cap
+    # on files while the number the caller actually reads -- hits -- ran to a
+    # separate budget nothing in the response mentioned. Say which limit bound
+    # what, so the count that arrives can be reconciled with the count asked for.
+    result["limits"] = {"max_results": effective_max, "max_hits": hit_budget}
     if hits_dropped:
         result["hint"] = (
             f"{hits_found} matching line(s) found, {hits_returned} returned "
-            f"(line budget {hit_budget}). Narrow the content pattern, or use fs_read "
-            "on one file to page through its matches."
+            f"(line budget {hit_budget}). max_results bounds the files searched "
+            f"({effective_max} here), not the lines matched inside them. Narrow the "
+            "content pattern, or use fs_read on one file to page through its matches."
         )
     elif truncated:
         result["hint"] = (

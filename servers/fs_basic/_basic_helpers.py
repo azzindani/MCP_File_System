@@ -15,7 +15,12 @@ for _p in (str(_root_dir), str(_this_dir)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from shared.confirm_store import cleanup_expired, create_token, validate_token  # noqa: E402
+from shared.confirm_store import (  # noqa: E402
+    cleanup_expired,
+    create_token,
+    peek_token,
+    validate_token,
+)
 from shared.file_utils import (  # noqa: E402
     atomic_write,
     atomic_write_bytes,
@@ -76,6 +81,7 @@ __all__ = [
     # shared helpers
     "cleanup_expired",
     "create_token",
+    "peek_token",
     "validate_token",
     "atomic_write",
     "atomic_write_bytes",

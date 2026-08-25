@@ -129,7 +129,60 @@ _FIELD_ALIASES: dict[str, dict[str, str]] = {
     "rename": {"new_name": "name", "dst": "name"},
 }
 
+# Only `path` was ever type-checked, so every other field reached its handler as
+# whatever the caller sent and failed there as a Python attribute error. An op
+# called patch_*lines* invites `content` as a list of lines -- a sweep model
+# wrote exactly that -- and got back "'list' object has no attribute
+# 'splitlines'" under the hint "Retry op=patch_lines with corrected
+# parameters", which names neither the field nor what was wrong with it.
+_STR_FIELDS: frozenset[str] = frozenset(
+    {
+        "content",
+        "content_encoding",
+        "find",
+        "replace",
+        "after_pattern",
+        "name",
+        "src",
+        "dst",
+        "mode",
+        "token",
+        "url",
+        "timestamp",
+    }
+)
+_INT_FIELDS: frozenset[str] = frozenset({"start_line", "end_line", "count"})
+_BOOL_FIELDS: frozenset[str] = frozenset({"regex"})
+
 _MAX_OPS = 50
+
+
+def _type_errors(prefix: str, op_name: str, op_dict: dict) -> list[str]:
+    """Name the field and the type it wants, before the handler trips over it."""
+    out: list[str] = []
+    for field, value in op_dict.items():
+        if field == "op":
+            continue
+        if field in _STR_FIELDS and not isinstance(value, str):
+            got = type(value).__name__
+            extra = ""
+            if field == "content" and isinstance(value, list):
+                extra = ' Pass the lines joined into one string, e.g. "\\n".join(lines).'
+            elif field == "mode":
+                # mode=644 as an int is the natural way to type it, and it is
+                # base-8 text: reaching the handler it raised "int() can't
+                # convert non-string with explicit base".
+                extra = " Modes are octal strings, e.g. '644' or '755'."
+            out.append(f"{prefix} ({op_name}): '{field}' must be a string, got {got}.{extra}")
+        elif field in _INT_FIELDS and (isinstance(value, bool) or not isinstance(value, int)):
+            out.append(
+                f"{prefix} ({op_name}): '{field}' must be an integer, got {type(value).__name__}"
+            )
+        elif field in _BOOL_FIELDS and not isinstance(value, bool):
+            out.append(
+                f"{prefix} ({op_name}): '{field}' must be true or false, got {type(value).__name__}"
+            )
+    return out
 
 
 def apply_field_aliases(op_dict: dict) -> dict:
@@ -209,6 +262,8 @@ def validate_ops(ops: list[dict]) -> list[str]:
                 f"{lead}{op_name} accepts: {', '.join(known)}"
             )
             continue
+
+        errors.extend(_type_errors(prefix, op_name, op_dict))
 
         accepted = _FIELD_ALIASES.get(op_name, {})
         for field in _REQUIRED.get(op_name, []):
