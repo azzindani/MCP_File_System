@@ -24,6 +24,7 @@ from _basic_helpers import (
     is_url,
     list_versions,
     ok,
+    peek_token,
     resolve_path,
     restore_version,
     size_kb,
@@ -63,7 +64,19 @@ def _fs_write(ops: list[dict], dry_run: bool) -> dict:
     # is the only place the vocabulary is discoverable.
     errors = validate_ops(ops)
     if errors:
-        return _error("fs_write", "; ".join(errors), f"Valid ops: {', '.join(sorted(ALLOWED_OPS))}")
+        # Every validation failure used to be answered with the list of valid op
+        # names, including the ones where the op name was fine and a field was
+        # the wrong type -- pointing the caller at the one part of the call that
+        # was already correct.
+        joined = "; ".join(errors)
+        if "unknown op" in joined or "missing required key 'op'" in joined:
+            hint = f"Valid ops: {', '.join(sorted(ALLOWED_OPS))}"
+        else:
+            hint = (
+                "Correct the field(s) named above and resend. The `ops` schema is "
+                "list[dict], so these messages are where each op's fields are described."
+            )
+        return _error("fs_write", joined, hint)
 
     # Step 2: detect delete ops — they stop the batch
     delete_op_names = ("delete_request", "delete_tree_request")
@@ -104,31 +117,89 @@ def _fs_write(ops: list[dict], dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _wrong_delete_op(op_name: str, path: Path) -> dict | None:
+    """Refuse a delete op whose name does not match what is at the path.
+
+    The server advertises four delete ops and ran two handlers. Both request
+    names reached the same code, so `delete_request` -- the op named for a
+    single file -- resolved a directory, issued a token, and `delete_confirm`
+    spent it on `shutil.rmtree`. A caller reading the op table sees a separate
+    `delete_tree_request` and reasonably concludes the file op cannot erase a
+    tree. It could, recursively, under `success: true`.
+
+    Nothing is being taken away: every deletion still has an op that performs
+    it. What changes is that the op name the caller typed has to agree with what
+    it is pointed at, and the refusal names the one that does.
+    """
+    is_dir = path.is_dir()
+    if op_name == "delete_request" and is_dir:
+        return _error(
+            "delete_request",
+            f"{path.name} is a directory, and delete_request deletes a single file",
+            f"Use op=delete_tree_request to delete {path.name} and everything under it, "
+            f"then confirm with op=delete_tree_confirm.",
+        )
+    if op_name == "delete_tree_request" and not is_dir:
+        return _error(
+            "delete_tree_request",
+            f"{path.name} is a file, and delete_tree_request deletes a directory tree",
+            f"Use op=delete_request to delete {path.name}, then confirm with op=delete_confirm.",
+        )
+    return None
+
+
+def _file_count(path: Path) -> int:
+    """How many files a tree delete would actually destroy."""
+    try:
+        return sum(1 for p in path.rglob("*") if p.is_file())
+    except OSError:
+        return 0
+
+
 def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
     targets: list[dict] = []
     progress: list[dict] = []
     total_size_kb = 0
+    total_files = 0
+    tree_requested = False
 
     for op_dict in delete_ops:
         path_str = op_dict["path"]
+        op_name = str(op_dict.get("op", "delete_request"))
         try:
             path = resolve_path(path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             return _error(
                 "fs_write", str(e), "Verify the path exists and is within your home directory."
             )
+        mismatch = _wrong_delete_op(op_name, path)
+        if mismatch:
+            return mismatch
         size_kb = _get_size_kb(path)
         total_size_kb += size_kb
+        is_dir = path.is_dir()
+        tree_requested = tree_requested or is_dir
+        files = _file_count(path) if is_dir else 1
+        total_files += files
         t = {
             "path": str(path),
             "size_kb": size_kb,
-            "type": "directory" if path.is_dir() else "file",
+            "type": "directory" if is_dir else "file",
         }
+        if is_dir:
+            # "Permanently deletes 1 item(s)" for a directory counted the
+            # argument, not the damage: a tree of forty files read as one.
+            t["files"] = files
         targets.append(t)
-        progress.append(info(f"Located {path.name}", f"{size_kb} KB"))
+        detail = f"{size_kb} KB, {files} file(s)" if is_dir else f"{size_kb} KB"
+        progress.append(info(f"Located {path.name}", detail))
 
+    confirm_op = "delete_tree_confirm" if tree_requested else "delete_confirm"
     n = len(targets)
-    warning = f"Permanently deletes {n} item(s) ({total_size_kb} KB). Cannot be undone."
+    scope = f"{n} item(s)"
+    if total_files != n:
+        scope = f"{n} item(s) holding {total_files} file(s)"
+    warning = f"Permanently deletes {scope} ({total_size_kb} KB). Cannot be undone."
 
     if dry_run:
         result: dict = {
@@ -144,7 +215,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         result["token_estimate"] = len(str(result)) // 4
         return result
 
-    token, superseded = create_token(targets)
+    token, superseded = create_token(targets, confirm_op)
     result = {
         "success": True,
         "op": "delete_pending",
@@ -154,7 +225,11 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         "targets": targets,
         "total_size_kb": total_size_kb,
         "warning": warning,
-        "next_step": (f"Call fs_write with op=delete_confirm and token={token} to proceed."),
+        # A tree request's next_step named delete_confirm -- the file op --
+        # so following the instructions in the response taught the wrong half
+        # of the vocabulary the tool advertises.
+        "confirm_op": confirm_op,
+        "next_step": (f"Call fs_write with op={confirm_op} and token={token} to proceed."),
         "progress": progress,
     }
     # Asking twice for the same targets is one intent, not two. Say which token
@@ -169,10 +244,34 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
 
 def _op_delete_confirm(op_dict: dict, dry_run: bool) -> dict:
     token = op_dict["token"]
-    entry = validate_token(token)
-    if entry is None:
+    # The op the caller actually typed. Both confirm names route here, and this
+    # function used to answer "op": "delete_confirm" whichever was called, so
+    # delete_tree_confirm reported itself as an op the caller had not used.
+    called_as = str(op_dict.get("op", "delete_confirm"))
+
+    pending = peek_token(token)
+    if pending is None:
         return _error(
-            "delete_confirm",
+            called_as,
+            "Invalid or expired confirmation token",
+            "Use fs_write with op=delete_request to request a new confirmation token.",
+        )
+
+    wants = str(pending.get("confirm_op", "delete_confirm"))
+    if wants != called_as:
+        # Refused before validate_token consumes it, so the retry this hint
+        # names still has a token to spend.
+        kind = "a directory tree" if wants == "delete_tree_confirm" else "a single file"
+        return _error(
+            called_as,
+            f"Token {token} was issued for {kind}, which {wants} confirms",
+            f"Call fs_write with op={wants} and token={token}. The token is still valid.",
+        )
+
+    entry = validate_token(token)
+    if entry is None:  # pragma: no cover - expired between peek and validate
+        return _error(
+            called_as,
             "Invalid or expired confirmation token",
             "Use fs_write with op=delete_request to request a new confirmation token.",
         )
@@ -210,12 +309,12 @@ def _op_delete_confirm(op_dict: dict, dry_run: bool) -> dict:
             else:
                 p.unlink()
             deleted.append(str(p))
-            append_receipt(str(p), "fs_write", "delete_confirm", "deleted", backup)
+            append_receipt(str(p), "fs_write", called_as, "deleted", backup)
             progress.append(ok(f"Deleted {p.name}", f"backup={backup}"))
 
     result: dict = {
         "success": True,
-        "op": "delete_confirm",
+        "op": called_as,
         "deleted": deleted,
         "backup": backups[0] if backups else None,
         "backups": backups,
@@ -797,10 +896,26 @@ def _op_insert_after(op_dict: dict, dry_run: bool) -> dict:
     new_lines: list[str] = []
     inserted = 0
     for line in lines:
+        hit = (count == 0 or inserted < count) and after_pattern in line
+        # Inserting after a line means that line now has something below it, so
+        # it has to end. Only the final line of a file that ends without a
+        # newline can be unterminated, and anchoring there welded the two
+        # together -- "appended line twoinserted after anchor", two lines where
+        # the response reported three, under success: true. patch_lines was
+        # taught to produce something that is a line; this is the same rule for
+        # the line it is inserted after.
+        anchor_ended_the_file = hit and not line.endswith(("\n", "\r"))
+        if anchor_ended_the_file:
+            line += "\n"
         new_lines.append(line)
-        if (count == 0 or inserted < count) and after_pattern in line:
-            # Preserve line ending of insert
-            to_insert = insert_content if insert_content.endswith("\n") else insert_content + "\n"
+        if hit:
+            to_insert = insert_content
+            if anchor_ended_the_file:
+                # The file's missing final newline moves down to the block that
+                # is now last, so a file that ended without one still does.
+                to_insert = to_insert[:-1] if to_insert.endswith("\n") else to_insert
+            elif not to_insert.endswith("\n"):
+                to_insert += "\n"
             new_lines.append(to_insert)
             inserted += 1
 
@@ -991,24 +1106,46 @@ def _op_patch_lines(op_dict: dict, dry_run: bool) -> dict:
             "op": "patch_lines",
             "path": str(path),
             "lines_replaced": e - s,
+            "lines_written": len(patch_lines),
             "would_change": True,
             "backup": None,
-            "progress": [info(f"Would patch lines {s}–{e} in {path.name}")],
+            "progress": [
+                info(
+                    f"Would replace {e - s} line(s) with {len(patch_lines)} in {path.name}",
+                    f"lines [{s}, {e})",
+                )
+            ],
         }
         r["token_estimate"] = len(str(r)) // 4
         return r
 
     backup = snapshot(str(path))
     atomic_write(path, "".join(new_lines))
-    append_receipt(str(path), "fs_write", "patch_lines", f"patched lines {s}–{e}", backup)
+    append_receipt(
+        str(path),
+        "fs_write",
+        "patch_lines",
+        f"replaced {e - s} line(s) at [{s}, {e}) with {len(patch_lines)}",
+        backup,
+    )
     r = {
         "success": True,
         "op": "patch_lines",
         "path": str(path),
         "lines_replaced": e - s,
+        # end_line is exclusive, so "Patched lines 1–2" reads as two lines and
+        # replaced one -- the same message delete_lines was already fixed to
+        # stop printing. lines_replaced counts what was removed; the caller
+        # wrote a different number of lines and nothing said how many.
+        "lines_written": len(patch_lines),
         "total_lines": len(new_lines),
         "backup": backup,
-        "progress": [ok(f"Patched lines {s}–{e} in {path.name}")],
+        "progress": [
+            ok(
+                f"Replaced {e - s} line(s) with {len(patch_lines)} in {path.name}",
+                f"lines [{s}, {e})",
+            )
+        ],
     }
     r["token_estimate"] = len(str(r)) // 4
     return r
