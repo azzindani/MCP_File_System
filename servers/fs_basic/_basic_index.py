@@ -23,6 +23,7 @@ A zero-result query now reports what the index actually holds under the root
 it filtered on, so "never indexed" and "nothing matches" stop looking alike.
 """
 
+import os
 import sqlite3
 import stat as stat_mod
 import time
@@ -102,6 +103,20 @@ def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _subtree_like(root: Path) -> tuple[str, str]:
+    """A LIKE pattern matching everything under `root`, and its escape char.
+
+    Two things a plain `str(root) + "%"` gets wrong. It has no separator, so
+    clearing /workspace/data also matches /workspace/database and takes a
+    neighbouring tree's rows with it. And SQLite's LIKE reads `_` as
+    "any one character" and `%` as "any run", both of which appear in ordinary
+    directory names -- Ad_Data, 50%_sample -- so the pattern silently covers
+    more paths than the one it was built from.
+    """
+    escaped = str(root).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return escaped + os.sep.replace("\\", "\\\\") + "%", "\\"
+
+
 def _get_conn() -> sqlite3.Connection:
     _index_dir().mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(_db_path()))
@@ -145,6 +160,24 @@ def _action_build(path: str) -> dict:
     started = time.time()
 
     progress.append(info(f"Indexing {root.name}"))
+
+    # A build only ever INSERT OR REPLACEd, so a path deleted since the last
+    # build kept its row and every reader served it as live. One build of
+    # /workspace/data answered "indexed 41" while stats, reading the same
+    # table moments later, said 53 entries / 37 files / 15 dirs / 1 symlink --
+    # the extra fifteen being a directory tree removed that morning, listed
+    # back with its real old sizes and mtimes. `ls` on those paths said no such
+    # file. A stale row is worse than a missing one: a caller can act on it.
+    #
+    # Dropping the subtree first makes a build mean what its name says. It is
+    # one transaction with the inserts that follow, so a walk that dies partway
+    # rolls back to the previous index rather than emptying it.
+    like, esc = _subtree_like(root)
+    removed_cur = cur.execute(
+        f"DELETE FROM {_FILES_TABLE} WHERE path = ? OR path LIKE ? ESCAPE ?",
+        (str(root), like, esc),
+    )
+    stale = removed_cur.rowcount or 0
 
     # stat() follows symlinks, so a link was stored as type "file" carrying the
     # size and mtime of whatever it pointed at -- while fs_manage
@@ -190,6 +223,9 @@ def _action_build(path: str) -> dict:
 
     elapsed = round(time.time() - started, 2)
     progress.append(ok(f"Indexed {count} entries", f"{elapsed}s"))
+    dropped = max(0, stale - count)
+    if dropped:
+        progress.append(info(f"Dropped {dropped} entry(s) no longer on disk"))
 
     result: dict = {
         "success": True,
@@ -202,6 +238,9 @@ def _action_build(path: str) -> dict:
         "files": by_type["file"],
         "dirs": by_type["dir"],
         "symlinks": by_type["symlink"],
+        # How many rows this rebuild removed because the path is gone. Silence
+        # here is what let a build report 41 while the table held 53.
+        "dropped_stale": dropped,
         "last_built": ts_now,
         "elapsed_seconds": elapsed,
         "db_path": str(_db_path()),
@@ -230,10 +269,11 @@ def _action_list(path: str, max_results: int) -> dict:
     conn = _get_conn()
     try:
         if root_filter:
+            like, esc = _subtree_like(Path(root_filter))
             rows = conn.execute(
                 f"SELECT path, name, size, mtime, type FROM {_FILES_TABLE} "
-                f"WHERE path LIKE ? ORDER BY path LIMIT ?",
-                (root_filter + "%", effective_max + 1),
+                f"WHERE (path = ? OR path LIKE ? ESCAPE ?) ORDER BY path LIMIT ?",
+                (root_filter, like, esc, effective_max + 1),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -298,10 +338,11 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         # Convert glob pattern to SQL LIKE
         like_pattern = pattern.replace("*", "%").replace("?", "_")
         if root_filter:
+            like, esc = _subtree_like(Path(root_filter))
             rows = conn.execute(
                 f"SELECT path, name, size, mtime, type FROM {_FILES_TABLE} "
-                f"WHERE name LIKE ? AND path LIKE ? LIMIT ?",
-                (like_pattern, root_filter + "%", effective_max + 1),
+                f"WHERE name LIKE ? AND (path = ? OR path LIKE ? ESCAPE ?) LIMIT ?",
+                (like_pattern, root_filter, like, esc, effective_max + 1),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -319,9 +360,10 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         # same connection, because it is the number that tells a zero-result
         # query apart from an unindexed one.
         if root_filter:
+            like, esc = _subtree_like(Path(root_filter))
             covered_row = conn.execute(
-                f"SELECT COUNT(*) FROM {_FILES_TABLE} WHERE path LIKE ?",
-                (root_filter + "%",),
+                f"SELECT COUNT(*) FROM {_FILES_TABLE} WHERE path = ? OR path LIKE ? ESCAPE ?",
+                (root_filter, like, esc),
             ).fetchone()
         else:
             covered_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
@@ -484,9 +526,13 @@ def _action_clear(path: str) -> dict:
 
     conn = _get_conn()
     try:
+        # Was `path LIKE root || '%'`: no separator, so clearing /workspace/data
+        # also took /workspace/database's rows. Same helper as build, so the two
+        # agree on what "under this root" means.
+        like, esc = _subtree_like(root)
         cur = conn.execute(
-            f"DELETE FROM {_FILES_TABLE} WHERE path LIKE ?",
-            (str(root) + "%",),
+            f"DELETE FROM {_FILES_TABLE} WHERE path = ? OR path LIKE ? ESCAPE ?",
+            (str(root), like, esc),
         )
         removed = cur.rowcount
         left_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
