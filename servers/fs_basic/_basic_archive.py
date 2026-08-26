@@ -1,6 +1,8 @@
 """fs_archive implementation — zip/tar.gz create, extract, list."""
 
+import os
 import tarfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from _basic_helpers import (
     ok,
     resolve_path,
     size_kb,
+    warn,
 )
 
 from shared.version_control import snapshot
@@ -19,6 +22,56 @@ from shared.version_control import snapshot
 # these suffixes are replaced without argument. Anything else is a destination
 # the caller almost certainly did not mean to destroy.
 _ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar")
+
+# A zip entry made on Unix carries its st_mode in the top half of external_attr.
+# 0o120000 is S_IFLNK: the entry is a symlink and its *content* is the target
+# path. tarfile has represented links this way all along; zipfile will do it
+# too, but only if asked.
+_S_IFLNK = 0o120000
+_LINK_ATTR = (_S_IFLNK | 0o777) << 16
+
+
+def _is_zip_symlink(zi: zipfile.ZipInfo) -> bool:
+    return (zi.external_attr >> 16) & 0o170000 == _S_IFLNK
+
+
+def _zip_symlink(zf: zipfile.ZipFile, link: Path, arcname: Path) -> None:
+    """Store the link itself, the way tar.gz already does.
+
+    zipfile.write() opens the path and reads it, which for a symlink means
+    reading whatever it points at -- so archiving a folder used to copy the
+    *contents* of files outside that folder into the zip.
+    """
+    zi = zipfile.ZipInfo(arcname.as_posix(), date_time=time.localtime(link.lstat().st_mtime)[:6])
+    zi.create_system = 3  # Unix, so the mode bits above are honoured
+    zi.external_attr = _LINK_ATTR
+    zf.writestr(zi, os.readlink(link))
+
+
+def _links_hint(links: list[Path], escaping: list[Path], src: Path) -> str:
+    base = (
+        f"{len(links)} symlink(s) are stored as links, so extracting elsewhere reproduces the "
+        "links and not copies of their targets."
+    )
+    if not escaping:
+        return base
+    names = ", ".join(str(p.relative_to(src)) for p in escaping[:3])
+    more = f" (+{len(escaping) - 3} more)" if len(escaping) > 3 else ""
+    return (
+        f"{base} {len(escaping)} of them point outside {src.name} -- {names}{more} -- so those "
+        f"will dangle wherever the archive is unpacked. Copy the targets into {src.name} before "
+        "archiving if the data itself needs to travel."
+    )
+
+
+def _escapes(link: Path, root: Path) -> bool:
+    """Does this link resolve to somewhere outside the tree being archived?"""
+    try:
+        target = Path(os.path.join(link.parent, os.readlink(link))).resolve()
+        return not target.is_relative_to(root.resolve())
+    except OSError:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -114,13 +167,33 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
 
     progress = []
 
-    # Count items
+    # Count items. Symlinks are kept apart from regular files: is_file() follows
+    # them, so a link used to be archived as a copy of its target, and a link to
+    # a *directory* answered False to both is_file() and (for rglob) recursion,
+    # so it vanished from a zip with nothing said. Naming a symlink directly as
+    # `target` still archives what it points at -- that is what the caller asked
+    # for. This is about the ones swept up incidentally inside a folder.
+    links: list[Path] = []
     if src.is_dir():
-        items = [p for p in src.rglob("*") if p.is_file()]
+        items = []
+        for p in src.rglob("*"):
+            if p.is_symlink():
+                links.append(p)
+            elif p.is_file():
+                items.append(p)
     else:
         items = [src]
 
+    escaping = [p for p in links if _escapes(p, src)]
+
     progress.append(info(f"Archiving {len(items)} file(s) from {src.name}"))
+    if links:
+        progress.append(
+            info(
+                f"{len(links)} symlink(s) stored as links, not copies",
+                f"{len(escaping)} of them point outside {src.name}",
+            )
+        )
 
     if dry_run:
         result: dict = {
@@ -131,9 +204,13 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
             "source": str(src),
             "format": format_,
             "would_include": len(items),
+            "symlinks_archived": len(links),
+            "symlinks_pointing_outside": [str(p.relative_to(src)) for p in escaping[:10]],
             "dry_run": True,
             "progress": progress,
         }
+        if links:
+            result["hint"] = _links_hint(links, escaping, src)
         result["token_estimate"] = len(str(result)) // 4
         return result
 
@@ -170,6 +247,8 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
             if src.is_dir():
                 for item in items:
                     zf.write(item, item.relative_to(src.parent))
+                for link in links:
+                    _zip_symlink(zf, link, link.relative_to(src.parent))
             else:
                 zf.write(src, src.name)
     else:  # tar.gz
@@ -187,9 +266,13 @@ def _action_create(archive_path: str, source: str, format_: str, dry_run: bool) 
         "source": str(src),
         "format": format_,
         "files_archived": len(items),
+        "symlinks_archived": len(links),
+        "symlinks_pointing_outside": [str(p.relative_to(src)) for p in escaping[:10]],
         "size_kb": arc_size_kb,
         "progress": progress,
     }
+    if links:
+        result["hint"] = _links_hint(links, escaping, src)
     result["token_estimate"] = len(str(result)) // 4
     return result
 
@@ -251,16 +334,39 @@ def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dic
         return result
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    # zipfile.extractall() writes a symlink entry out as a plain file holding the
+    # target path, so a zip that stores links would not round-trip the way the
+    # tar.gz side does. Recreate them, minus any that would resolve outside the
+    # destination -- the same rule tarfile's filter="data" applies below.
+    skipped_links: list[str] = []
     with zipfile.ZipFile(arc, "r") as zf:
-        zf.extractall(out_dir)
+        infos = zf.infolist()
+        link_infos = [zi for zi in infos if _is_zip_symlink(zi)]
+        zf.extractall(out_dir, members=[zi for zi in infos if not _is_zip_symlink(zi)])
+        for zi in link_infos:
+            dest = out_dir / zi.filename
+            target = zf.read(zi).decode("utf-8", "replace")
+            if (
+                not Path(os.path.join(dest.parent, target))
+                .resolve()
+                .is_relative_to(out_dir.resolve())
+            ):
+                skipped_links.append(zi.filename)
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(target, dest)
 
     # "Extracted 3 files" counted the directory entries in the archive too, so
     # a two-file archive under one folder reported three files -- the same
     # number the info line above correctly calls "entries".
     dirs = sum(1 for n in names if n.endswith("/"))
-    files = len(names) - dirs
+    syms = len(link_infos)
+    files = len(names) - dirs - syms
     progress.append(
-        ok(f"Extracted {len(names)} entries to {out_dir.name}", f"{files} file(s), {dirs} dir(s)")
+        ok(
+            f"Extracted {len(names) - len(skipped_links)} entries to {out_dir.name}",
+            f"{files} file(s), {dirs} dir(s), {syms - len(skipped_links)} symlink(s)",
+        )
     )
     result = {
         "success": True,
@@ -268,11 +374,25 @@ def _extract_zip(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> dic
         "action": "extract",
         "archive": str(arc),
         "target": str(out_dir),
-        "extracted": len(names),
+        "extracted": len(names) - len(skipped_links),
         "extracted_files": files,
         "extracted_dirs": dirs,
+        "extracted_symlinks": syms - len(skipped_links),
         "progress": progress,
     }
+    if skipped_links:
+        progress.append(
+            warn(
+                f"Skipped {len(skipped_links)} symlink(s) pointing outside {out_dir.name}",
+                ", ".join(skipped_links[:5]),
+            )
+        )
+        result["symlinks_skipped"] = skipped_links[:10]
+        result["hint"] = (
+            f"{len(skipped_links)} symlink(s) in the archive resolve outside {out_dir.name} and "
+            "were not recreated, so nothing lands outside the directory you extracted into. "
+            "Extract somewhere that already holds their targets if you need them to resolve."
+        )
     result["token_estimate"] = len(str(result)) // 4
     return result
 
@@ -313,14 +433,35 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
         return result
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    skipped_links: list[str] = []
+
+    def _keep(member: tarfile.TarInfo, dest: str) -> tarfile.TarInfo | None:
+        """Drop a link that escapes the destination; keep the rest.
+
+        filter="data" *raises* on one, so a single link to an absolute path --
+        which is an ordinary thing to find in a backup -- cost the caller the
+        whole archive and left nothing extracted. The zip side skips just that
+        entry, so this does too.
+        """
+        try:
+            return tarfile.data_filter(member, dest)
+        except (tarfile.AbsoluteLinkError, tarfile.LinkOutsideDestinationError):
+            skipped_links.append(member.name)
+            return None
+
     with tarfile.open(arc, "r:gz") as tf:
-        tf.extractall(out_dir, filter="data")
+        tf.extractall(out_dir, filter=_keep)
         # Same count, same correction as the zip side: a tar lists its
         # directories as members, and they are not files.
         dirs = sum(1 for m in tf.getmembers() if m.isdir())
-    files = len(members) - dirs
+        syms = sum(1 for m in tf.getmembers() if m.issym())
+    files = len(members) - dirs - syms
+    extracted = len(members) - len(skipped_links)
     progress.append(
-        ok(f"Extracted {len(members)} entries to {out_dir.name}", f"{files} file(s), {dirs} dir(s)")
+        ok(
+            f"Extracted {extracted} entries to {out_dir.name}",
+            f"{files} file(s), {dirs} dir(s), {syms - len(skipped_links)} symlink(s)",
+        )
     )
     result = {
         "success": True,
@@ -328,11 +469,25 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
         "action": "extract",
         "archive": str(arc),
         "target": str(out_dir),
-        "extracted": len(members),
+        "extracted": extracted,
         "extracted_files": files,
         "extracted_dirs": dirs,
+        "extracted_symlinks": syms - len(skipped_links),
         "progress": progress,
     }
+    if skipped_links:
+        progress.append(
+            warn(
+                f"Skipped {len(skipped_links)} symlink(s) pointing outside {out_dir.name}",
+                ", ".join(skipped_links[:5]),
+            )
+        )
+        result["symlinks_skipped"] = skipped_links[:10]
+        result["hint"] = (
+            f"{len(skipped_links)} symlink(s) in the archive resolve outside {out_dir.name} and "
+            "were not recreated, so nothing lands outside the directory you extracted into. "
+            "Extract somewhere that already holds their targets if you need them to resolve."
+        )
     result["token_estimate"] = len(str(result)) // 4
     return result
 
