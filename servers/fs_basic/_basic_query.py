@@ -449,7 +449,7 @@ def _build_grep_response(
         content_backend = "python"
         matches_out = []
         truncated = False
-        for idx, file_path in enumerate(name_matches):
+        for file_path in name_matches:
             if not file_path.is_file():
                 continue
             hits = _python_grep(file_path, content, context_lines, is_regex)
@@ -461,9 +461,19 @@ def _build_grep_response(
                     except Exception:
                         pass
                 matches_out.append(entry)
-                if len(matches_out) >= effective_max:
-                    # More unscanned files remain -> there may be more matches.
-                    truncated = idx < len(name_matches) - 1
+                # Collect one past the cap, then report on what was actually
+                # found. The old form stopped *at* the cap and set the flag from
+                # `idx < len(name_matches) - 1` -- whether any unscanned file
+                # remained, not whether any further file matched. With exactly
+                # max_results matches among a larger set of candidates that is a
+                # false positive, and which way it fell depended on directory
+                # iteration order: the same five files with five receipts beside
+                # them reported truncated in CI and not in production, off the
+                # same commit. The name-pattern branch above already compares
+                # counts this way.
+                if len(matches_out) > effective_max:
+                    truncated = True
+                    matches_out = matches_out[:effective_max]
                     break
 
     # The file list was bounded above; the lines inside each file were not. A
