@@ -114,3 +114,5 @@ jobs:
           public-host: fs.example.com
           mcp-path: /mcp
           health-timeout: "120"
+          create-dirs: "oauth-state fs-root"
+          shared-dir: shared-files
