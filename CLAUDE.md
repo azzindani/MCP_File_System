@@ -3,7 +3,7 @@
 > Standards: https://github.com/azzindani/Standards/blob/main/local_mcp/STANDARDS.md (v5.1)
 > Project repo: `mcp-filesystem`
 > Server: `fs_basic` — Tier 1 (File Management Layer)
-> Language: Python 3.12 + uv
+> Language: Python 3.14 + uv
 > Target: 8 GB VRAM, 9B local model (Qwen3 4B/9B, Gemma 4 E4B) in LM Studio
 
 ---
@@ -159,7 +159,7 @@ mcp-filesystem/
 │
 ├── pyproject.toml              root workspace
 ├── uv.lock
-├── .python-version             3.12
+├── .python-version             3.14
 ├── .gitattributes
 ├── .editorconfig
 ├── verify_tool_docstrings.py
@@ -1194,7 +1194,7 @@ Every tool returns a dict. Required fields in every response:
 - [ ] `servers/fs_basic/server.py` — 6 tools, thin wrappers, transport modes
 - [ ] `servers/fs_basic/pyproject.toml`
 - [ ] Root `pyproject.toml` workspace config
-- [ ] `.python-version` = 3.12
+- [ ] `.python-version` = 3.14
 - [ ] `.gitattributes` — lf for all, crlf for bat/cmd
 - [ ] `.editorconfig`
 - [ ] `verify_tool_docstrings.py` — CI docstring length checker

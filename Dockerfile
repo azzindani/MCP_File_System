@@ -13,7 +13,7 @@
 # under that mount in your tool calls.
 # ─────────────────────────────────────────────────────────────────────────────
 
-ARG PYTHON_VERSION=3.12-slim
+ARG PYTHON_VERSION=3.14-slim
 
 FROM python:${PYTHON_VERSION} AS builder
 WORKDIR /app

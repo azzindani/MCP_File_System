@@ -2,7 +2,7 @@
 name = "mcp-filesystem"
 version = "0.1.1"
 description = "Unified File System MCP Server — shared utilities"
-requires-python = ">=3.12"
+requires-python = "==3.14.*"
 readme = "README.md"
 license = { text = "MIT" }
 
@@ -31,7 +31,7 @@ ignore = ["E501"]
 known-first-party = ["shared", "servers"]
 
 [tool.pyright]
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 typeCheckingMode = "basic"
 include = ["servers", "shared"]
 extraPaths = ["servers/fs_basic", "."]
