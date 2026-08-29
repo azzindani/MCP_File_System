@@ -166,8 +166,10 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
         # the file only after `tr -d '\r'`, which is a read tool answering a
         # question about bytes with different bytes.
         #
-        # open() rather than read_text(newline=""): the keyword is 3.13+, and
-        # this project pins 3.12.
+        # open() rather than read_text(newline=""): that keyword landed in 3.13
+        # and this project pinned 3.12 when the fix was written. The pin is now
+        # 3.14, so either form works; the explicit handle stays because it says
+        # what the newline policy is at the point of the read.
         with path.open(encoding="utf-8", errors="replace", newline="") as fh:
             text = fh.read()
     except Exception as e:
