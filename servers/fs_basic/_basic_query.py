@@ -375,7 +375,7 @@ def _rg_grep(
             timeout=30,
             text=True,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError, subprocess.TimeoutExpired:
         return {}
 
     result: dict[str, list[dict]] = {}

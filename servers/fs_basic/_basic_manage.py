@@ -195,11 +195,11 @@ def _action_permissions(path: str) -> dict:
 
         try:
             result["owner"] = pwd.getpwuid(st.st_uid).pw_name
-        except (KeyError, ImportError):
+        except KeyError, ImportError:
             result["owner"] = str(st.st_uid)
         try:
             result["group"] = grp.getgrgid(st.st_gid).gr_name
-        except (KeyError, ImportError):
+        except KeyError, ImportError:
             result["group"] = str(st.st_gid)
     else:
         result["note"] = "Windows: POSIX permissions not applicable"
@@ -241,7 +241,7 @@ def _action_symlink_info(path: str) -> dict:
     if is_symlink:
         try:
             symlink_target = str(raw.readlink())
-        except (OSError, AttributeError):
+        except OSError, AttributeError:
             try:
                 symlink_target = str(Path(path).resolve())
             except Exception:

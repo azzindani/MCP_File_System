@@ -445,7 +445,7 @@ def _extract_targz(arc: Path, out_dir: Path, dry_run: bool, progress: list) -> d
         """
         try:
             return tarfile.data_filter(member, dest)
-        except (tarfile.AbsoluteLinkError, tarfile.LinkOutsideDestinationError):
+        except tarfile.AbsoluteLinkError, tarfile.LinkOutsideDestinationError:
             skipped_links.append(member.name)
             return None
 

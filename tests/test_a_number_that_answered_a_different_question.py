@@ -57,7 +57,7 @@ def sandbox(tmp_home):
     try:
         os.symlink("a.txt", d / "live_link")
         os.symlink("gone.txt", d / "broken_link")
-    except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+    except OSError, NotImplementedError:  # pragma: no cover - Windows without privilege
         pytest.skip("symlinks not creatable here")
     return d
 
