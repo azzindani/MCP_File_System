@@ -22,6 +22,7 @@ from mcp.types import ToolAnnotations  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 
+from shared.arg_errors import contract_errors  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
@@ -202,6 +203,10 @@ def fs_archive(
 # name yields a plausible answer with the argument silently dropped. Refuse it,
 # and name the ones that would have worked.
 enforce_known_arguments(mcp)
+# A known argument with the WRONG TYPE is rejected by pydantic before any of
+# this runs, and used to escape as a raw dump with no success/hint/token_estimate
+# and a pydantic.dev URL. Give it the fleet's failure shape instead.
+contract_errors(mcp)
 
 
 def main() -> None:
