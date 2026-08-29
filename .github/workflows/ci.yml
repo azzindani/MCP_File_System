@@ -24,8 +24,8 @@ jobs:
         with:
           version: "latest"
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      - name: Set up Python 3.14
+        run: uv python install 3.14
 
       - name: Install dependencies (workspace)
         run: uv sync --all-extras
@@ -69,8 +69,8 @@ jobs:
         with:
           version: "latest"
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      - name: Set up Python 3.14
+        run: uv python install 3.14
 
       - name: Install dependencies (workspace)
         run: uv sync --all-extras
