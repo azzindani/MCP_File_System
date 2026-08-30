@@ -262,6 +262,12 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
         progress.append(info(f"Located {path.name}", detail))
 
     confirm_op = "delete_tree_confirm" if tree_requested else "delete_confirm"
+    # `op` has to tell the two requests apart. Both answered "delete_pending",
+    # so the one field a caller checks first was identical whether they had
+    # asked to delete a file or an entire tree -- and the confirm step it hands
+    # back is NOT the same op. The confirm names already distinguish; this makes
+    # the request name match them.
+    pending_op = "delete_tree_pending" if tree_requested else "delete_pending"
     n = len(targets)
     scope = f"{n} item(s)"
     if total_files != n:
@@ -271,7 +277,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
     if dry_run:
         result: dict = {
             "success": True,
-            "op": "delete_pending",
+            "op": pending_op,
             "pending": True,
             "dry_run": True,
             "targets": targets,
@@ -285,7 +291,7 @@ def _handle_delete_request(delete_ops: list[dict], dry_run: bool) -> dict:
     token, superseded = create_token(targets, confirm_op)
     result = {
         "success": True,
-        "op": "delete_pending",
+        "op": pending_op,
         "pending": True,
         "confirmation_token": token,
         "expires_in_seconds": 300,

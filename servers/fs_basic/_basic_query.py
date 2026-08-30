@@ -15,10 +15,12 @@ from _basic_helpers import (
     get_max_context_lines,
     get_max_grep_hits,
     get_max_results,
+    get_max_scan_files,
     get_name_backend,
     info,
     ok,
     resolve_path,
+    warn,
 )
 
 # ---------------------------------------------------------------------------
@@ -143,12 +145,18 @@ def _fs_query(
     progress.append(info(f"Searching {root.name}", f"pattern={pattern}"))
 
     # --- name search ---
-    name_matches: list[Path] = _name_search(
+    # A CONTENT search must walk the tree, not `max_results * 10` of it. That
+    # multiplier gathered 500 paths for a 50-result request, filtered those by
+    # content, and reported the survivors as `total_found` -- 97 against grep's
+    # 489 over the same tree. The scan budget is now its own limit, and the
+    # response says whether it was reached.
+    scan_limit = get_max_scan_files() if content else effective_max * 10
+    name_matches, scan_complete = _name_search(
         root,
         pattern,
         type_,
         follow_symlinks,
-        effective_max * 10,  # gather extra to filter
+        scan_limit,
     )
     backend = get_name_backend()
 
@@ -183,6 +191,8 @@ def _fs_query(
                 backend,
                 cb,
                 progress,
+                scan_complete,
+                scan_limit,
             )
         else:
             name_matches = [
@@ -210,13 +220,36 @@ def _fs_query(
         "matches": match_entries,
         "returned": len(matches),
         "total_found": total_found,
+        # `truncated` has only ever meant "more matched than were returned".
+        # It says nothing about whether the search LOOKED everywhere, and the
+        # two were being read as one: a caller seeing total_found 97 with
+        # truncated true concluded there were exactly 97 matches, when the
+        # walk had stopped after 500 of 1,843 files.
         "truncated": truncated,
+        "scan_complete": scan_complete,
         "backend_used": backend,
         "progress": progress,
     }
+    if not scan_complete:
+        # total_found is a LOWER BOUND here, and must say so in the same
+        # response that carries it rather than in documentation nobody reads.
+        result["total_found_is_lower_bound"] = True
+        result["files_scanned"] = scan_limit
+        progress.append(
+            warn(
+                f"Stopped after scanning {scan_limit} path(s)",
+                "total_found counts only what was scanned",
+            )
+        )
     if content:
         result["content_is_regex"] = is_regex
-    if truncated:
+    if not scan_complete:
+        result["hint"] = (
+            f"The search stopped after {scan_limit} path(s), so total_found is a lower bound. "
+            f"Search a subdirectory, narrow `pattern` so fewer files are read, "
+            f"or raise MCP_MAX_SCAN_FILES."
+        )
+    elif truncated:
         result["hint"] = (
             f"Use fs_query with a narrower pattern or increase max_results "
             f"(current: {effective_max})."
@@ -263,7 +296,13 @@ def _name_search(
     type_: str,
     follow_symlinks: bool,
     limit: int,
-) -> list[Path]:
+) -> tuple[list[Path], bool]:
+    """Matching paths, and whether the whole tree was walked.
+
+    The second value is the point. This used to return the list alone, so a
+    walk that stopped at its cap was indistinguishable from one that finished
+    -- and every count derived from it was reported as exact.
+    """
     matches: list[Path] = []
     try:
         for dirpath, dirnames, filenames in os.walk(
@@ -275,16 +314,16 @@ def _name_search(
                     if fnmatch.fnmatch(d, pattern):
                         matches.append(dp / d)
                         if len(matches) >= limit:
-                            return matches
+                            return matches, False
             if type_ in ("file", "any"):
                 for f in filenames:
                     if fnmatch.fnmatch(f, pattern):
                         matches.append(dp / f)
                         if len(matches) >= limit:
-                            return matches
+                            return matches, False
     except PermissionError:
         pass
-    return matches
+    return matches, True
 
 
 # ---------------------------------------------------------------------------
@@ -429,8 +468,15 @@ def _build_grep_response(
     name_backend: str,
     content_backend: str,
     progress: list,
+    scan_complete: bool = True,
+    scan_limit: int = 0,
 ) -> dict:
-    """Build grep_mode=True response."""
+    """Build grep_mode=True response.
+
+    Takes scan_complete for the same reason the plain path reports it: this
+    branch counts hits across the files the walk happened to reach, and a walk
+    that stopped early makes every count here a lower bound.
+    """
     if content_backend == "ripgrep":
         rg_results = _rg_grep(root, content, context_lines, is_regex, name_matches)
         all_entries: list[dict] = []
@@ -516,9 +562,19 @@ def _build_grep_response(
         "hits_returned": hits_returned,
         "hits_found": hits_found,
         "truncated": truncated,
+        "scan_complete": scan_complete,
         "backend_used": content_backend,
         "progress": progress,
     }
+    if not scan_complete:
+        result["total_found_is_lower_bound"] = True
+        result["files_scanned"] = scan_limit
+        progress.append(
+            warn(
+                f"Stopped after scanning {scan_limit} path(s)",
+                "the counts below cover only what was scanned",
+            )
+        )
     # grep mode bounds two different things and the caller only names one of
     # them. max_results=5 came back with 200 matching lines, honouring the cap
     # on files while the number the caller actually reads -- hits -- ran to a
