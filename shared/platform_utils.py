@@ -17,6 +17,23 @@ def get_max_results() -> int:
     return 10 if is_constrained_mode() else 50
 
 
+def get_max_scan_files() -> int:
+    """How many paths a search may WALK, as opposed to RETURN.
+
+    Separate from get_max_results because they answer different questions, and
+    conflating them made `total_found` a wrong number. fs_query gathered
+    `max_results * 10` paths and then filtered those by content, so a search
+    over 1,843 files looked at 500 of them and reported `total_found: 97`
+    where grep finds 489 -- a field named "total" that was really "matches
+    among the first few hundred files walked", with nothing in the response
+    saying so.
+
+    A returned-results cap and a scan cap have to move independently: asking
+    for 50 results should not decide how much of the tree is searched.
+    """
+    return int(os.environ.get("MCP_MAX_SCAN_FILES", "2000" if is_constrained_mode() else "20000"))
+
+
 def get_max_lines() -> int:
     return 20 if is_constrained_mode() else 100
 
