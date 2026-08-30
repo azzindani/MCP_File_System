@@ -145,12 +145,23 @@ def _fs_query(
     progress.append(info(f"Searching {root.name}", f"pattern={pattern}"))
 
     # --- name search ---
-    # A CONTENT search must walk the tree, not `max_results * 10` of it. That
-    # multiplier gathered 500 paths for a 50-result request, filtered those by
-    # content, and reported the survivors as `total_found` -- 97 against grep's
-    # 489 over the same tree. The scan budget is now its own limit, and the
-    # response says whether it was reached.
-    scan_limit = get_max_scan_files() if content else effective_max * 10
+    # The scan budget is its OWN limit, for every search. It used to be
+    # `max_results * 10`, which gathered 500 paths for a 50-result request,
+    # filtered those by content, and reported the survivors as `total_found` --
+    # 97 against grep's 489 over the same tree.
+    #
+    # The first fix left `else effective_max * 10` here for the name-only path,
+    # on the grounds that name matching had always been exact. It is exact only
+    # while the multiplier happens to exceed the tree: under
+    # MCP_CONSTRAINED_MODE=1 get_max_results() is 10, so a name search walked
+    # 100 paths and reported `total_found: 100` for a directory of 120 files --
+    # the same defect, in the same field, one branch over. get_max_scan_files()
+    # says in its own docstring that a results cap must not decide how much of
+    # the tree is searched; this line was the last place still doing it.
+    #
+    # Caught by CI's constrained job, which exists because a sibling repo set
+    # the flag on its only matrix and so never tested the other branch.
+    scan_limit = get_max_scan_files()
     name_matches, scan_complete = _name_search(
         root,
         pattern,
