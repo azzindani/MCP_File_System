@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      publish_image:
+        description: "Also build and push the GHCR container image"
+        type: boolean
+        default: false
 
 jobs:
   ci:
@@ -13,8 +19,15 @@ jobs:
   # Publishes ghcr.io/<owner>/mcp-filesystem-fs-basic:<version> + :latest.
   # Uses the shared composite action hosted in MCP_Math so the build/push
   # mechanics stay in one place across all azzindani MCP_* repos.
+  #
+  # Opt-in, not automatic: a tag push cuts the GitHub Release only. The fleet
+  # deploys from locally built images, so publishing a package on every tag
+  # spends CI minutes on an artefact nothing pulls. To publish one, run this
+  # workflow by hand against the tag with publish_image=true. `inputs` is null
+  # on a push event, so the condition is false there without a second clause.
   docker:
     name: Publish Docker image (GHCR)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_image }}
     needs: ci
     runs-on: ubuntu-22.04
     permissions:
@@ -42,23 +55,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python 3.14
-        run: uv python install 3.14
-
-      - name: Build distributions
-        run: |
-          uv sync --all-extras
-          uv build
-
+      # No `uv build` here, and no dist/* attachment. This server is installed
+      # from source (install/install.sh clones the tag) or run as a container —
+      # nothing has ever installed the wheel, so building one made every
+      # release depend on the packaging metadata staying valid for a file
+      # nobody downloads. GitHub still attaches its own source archives.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

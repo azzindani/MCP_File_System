@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse  # noqa: E402
 from shared.arg_errors import contract_errors  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
-_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("FS_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("FS_PORT", "8801"))
 _oauth_bridge = build_oauth_bridge("FS")

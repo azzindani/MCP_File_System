@@ -2,6 +2,8 @@
 
 A self-hosted MCP server that gives local LLMs structured access to file management tools. No cloud APIs, no API keys — everything runs on your machine.
 
+**Release [`v0.1.2`](https://github.com/azzindani/MCP_File_System/releases/tag/v0.1.2)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
+
 ## Features
 
 - **6 tools** in a single server: `fs_query`, `fs_read`, `fs_write`, `fs_index`, `fs_manage`, `fs_archive`
@@ -366,7 +368,7 @@ bind-mount only the directory tree you want it to manage.
 
 ```bash
 FS_TRANSPORT=http FS_PORT=8801 uv run python servers/fs_basic/server.py
-curl http://localhost:8801/health   # {"status":"ok","version":"0.1.0"}
+curl http://localhost:8801/health   # {"status":"ok","version":"0.1.2"}
 ```
 
 ### Docker
