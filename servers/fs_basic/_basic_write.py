@@ -436,8 +436,14 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
     }
     handler = handlers.get(name)
     if not handler:
+        # `ops` is an untyped list[dict], so no schema tells a caller what an op
+        # may be and the docstring has room for only a few. Naming them here is
+        # the only place the full set is discoverable at the point of failure.
         return _error(
-            "fs_write", f"Unhandled op: {name}", "Use a supported op from the fs_write op table."
+            "fs_write",
+            f"Unhandled op: {name}",
+            f"Supported ops: {', '.join(sorted(handlers))}. "
+            "'download' takes {'op': 'download', 'url': ..., 'path': ...}.",
         )
     try:
         result = handler(op_dict, dry_run)
