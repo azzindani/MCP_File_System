@@ -39,6 +39,8 @@ from _basic_helpers import (
     resolve_path,
 )
 
+from shared.counts import counted
+
 _META_TABLE = "index_meta"
 _FILES_TABLE = "files"
 
@@ -275,15 +277,23 @@ def _action_list(path: str, max_results: int) -> dict:
                 f"WHERE (path = ? OR path LIKE ? ESCAPE ?) ORDER BY path LIMIT ?",
                 (root_filter, like, esc, effective_max + 1),
             ).fetchall()
+            # The denominator, from the same connection and the same WHERE the
+            # rows came from. Without it `truncated: true` is unreadable: 50 of
+            # 51 and 50 of 700,000 are the same response.
+            total_row = conn.execute(
+                f"SELECT COUNT(*) FROM {_FILES_TABLE} WHERE path = ? OR path LIKE ? ESCAPE ?",
+                (root_filter, like, esc),
+            ).fetchone()
         else:
             rows = conn.execute(
                 f"SELECT path, name, size, mtime, type FROM {_FILES_TABLE} ORDER BY path LIMIT ?",
                 (effective_max + 1,),
             ).fetchall()
+            total_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
+        total = total_row[0] if total_row else 0
     finally:
         conn.close()
 
-    truncated = len(rows) > effective_max
     entries = [
         {"path": r[0], "name": r[1], "size": r[2], "mtime": r[3], "type": r[4]}
         for r in rows[:effective_max]
@@ -295,13 +305,14 @@ def _action_list(path: str, max_results: int) -> dict:
         "action": "list",
         "root": root_filter or str(Path.home()),
         "entries": entries,
-        "returned": len(entries),
-        "truncated": truncated,
-        "progress": [ok(f"Listed {len(entries)} indexed entries")],
+        **counted(len(entries), total),
+        "progress": [ok(f"Listed {len(entries)} of {total} indexed entries")],
     }
-    if truncated:
+    if result["truncated"]:
         result["hint"] = (
-            f"Results capped at {effective_max}. Use action=query with a pattern to narrow results."
+            f"Showing {len(entries)} of {total} entries under this root. "
+            f"Use action=query with a pattern to narrow results, "
+            f"or raise max_results (capped at {get_max_results()})."
         )
     result["token_estimate"] = len(str(result)) // 4
     return result
