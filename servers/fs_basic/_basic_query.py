@@ -23,6 +23,8 @@ from _basic_helpers import (
     warn,
 )
 
+from shared.counts import counted
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -229,14 +231,15 @@ def _fs_query(
         "pattern": pattern,
         "root": str(root),
         "matches": match_entries,
-        "returned": len(matches),
         "total_found": total_found,
         # `truncated` has only ever meant "more matched than were returned".
         # It says nothing about whether the search LOOKED everywhere, and the
         # two were being read as one: a caller seeing total_found 97 with
         # truncated true concluded there were exactly 97 matches, when the
-        # walk had stopped after 500 of 1,843 files.
-        "truncated": truncated,
+        # walk had stopped after 500 of 1,843 files. `scan_complete` answers the
+        # second question, and an incomplete walk makes the total a floor --
+        # which `counted()` marks in the same response that carries it.
+        **counted(len(matches), total_found, exact=scan_complete),
         "scan_complete": scan_complete,
         "backend_used": backend,
         "progress": progress,
@@ -501,11 +504,14 @@ def _build_grep_response(
                         pass
                 all_entries.append(entry)
         truncated = len(all_entries) > effective_max
+        # Every candidate was processed here, so this count is exact.
+        files_matched, files_exact = len(all_entries), True
         matches_out = all_entries[:effective_max]
     else:
         content_backend = "python"
         matches_out = []
         truncated = False
+        files_matched, files_exact = 0, True
         for file_path in name_matches:
             if not file_path.is_file():
                 continue
@@ -530,8 +536,12 @@ def _build_grep_response(
                 # counts this way.
                 if len(matches_out) > effective_max:
                     truncated = True
+                    # Stopped one past the cap, so all that is known about the
+                    # real number of matching files is that it is at least this.
+                    files_matched, files_exact = len(matches_out), False
                     matches_out = matches_out[:effective_max]
                     break
+                files_matched = len(matches_out)
 
     # The file list was bounded above; the lines inside each file were not. A
     # term appearing on 15,101 lines of two CSVs produced a 5.5 MB response that
@@ -553,6 +563,7 @@ def _build_grep_response(
 
     total = len(matches_out)
     hits_returned = sum(len(e.get("hits", [])) for e in matches_out)
+    files_truncated = truncated
     truncated = truncated or hits_dropped
     progress.append(
         ok(f"grep found {total} file(s) with matches", f"{hits_returned} line(s) returned")
@@ -569,9 +580,27 @@ def _build_grep_response(
         # defect this field exists to close.
         "content_is_regex": is_regex,
         "matches": matches_out,
-        "returned": total,
+        # Two payloads, cut by two different budgets: the file list by
+        # max_results, the lines inside each file by the hit budget. One flag
+        # cannot describe both, and when it tried, a 5.5 MB response said
+        # truncated: false because the flag only ever meant the file list. The
+        # canonical triple describes the files; the lines carry their own three
+        # numbers beside it. `truncated` below stays the "anything was withheld"
+        # answer a caller reads first, which is why it is computed from both.
+        **counted(total, max(total, files_matched), exact=files_exact and scan_complete),
+        "files_matched": files_matched,
+        "files_truncated": files_truncated,
         "hits_returned": hits_returned,
         "hits_found": hits_found,
+        "hits_truncated": hits_dropped,
+        # counts-contract: composite -- deliberately overrides the flag that
+        # counted() derived for the file dimension immediately above, because
+        # here it has to answer "was anything withheld at all" across both
+        # payloads. A search that returned every matching file but clipped
+        # 8,000 of its lines is not a complete result, and this is the field a
+        # caller reads first. The per-payload numbers are all still present, so
+        # nothing is hidden by the override; `files_truncated` and
+        # `hits_truncated` say which of the two fired.
         "truncated": truncated,
         "scan_complete": scan_complete,
         "backend_used": content_backend,

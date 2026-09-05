@@ -412,9 +412,12 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         # does not say what it filtered on cannot be read.
         "root": root_filter or str(Path.home()),
         "matches": match_list,
-        "returned": len(match_list),
+        # `indexed_under_root` counts what the index holds under this root, not
+        # what the pattern matched: it is not the denominator for these rows and
+        # must not be read as one. The query is fetched one past the cap, so
+        # when it fills, the match total is a floor and is marked as one.
         "indexed_under_root": indexed_under_root,
-        "truncated": truncated,
+        **counted(len(match_list), len(rows), exact=not truncated),
         "progress": progress,
     }
     if index_age_warning:
@@ -596,8 +599,7 @@ def _action_receipt(path: str, max_results: int) -> dict:
         "file": str(file_path),
         "history": shown,
         "count": len(shown),
-        "total": len(history),
-        "truncated": truncated,
+        **counted(len(shown), len(history)),
         "progress": [
             ok(
                 f"Receipt for {file_path.name}",
