@@ -16,6 +16,8 @@ from _basic_helpers import (
     resolve_path,
 )
 
+from shared.counts import counted
+
 _BINARY_CHUNK = 8192
 
 
@@ -181,7 +183,15 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
     s = max(0, start_line)
     e = min(end_line, s + max_lines, total_lines)
     sliced = all_lines[s:e]
-    truncated = e < total_lines
+
+    # Two different questions, which one flag used to answer badly. `truncated`
+    # is measured against the window the caller asked for, bounded by where the
+    # file ends: reading lines 50-100 of a 100-line file returns everything that
+    # was asked for and nothing was withheld, so it is not truncation. What the
+    # old flag actually meant -- "the file continues past here" -- is a paging
+    # signal, and it keeps its own name rather than borrowing this one.
+    eligible = max(0, min(end_line, total_lines) - s)
+    more_after = e < total_lines
 
     result: dict = {
         "success": True,
@@ -192,17 +202,17 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
         "start_line": s,
         "end_line": e,
         "total_lines": total_lines,
-        "truncated": truncated,
+        "more_after": more_after,
+        **counted(len(sliced), eligible),
         # Now that the endings are the file's own, say which they are: a caller
         # comparing a hash, or writing the lines back somewhere, needs to know
         # whether the "\r" it is looking at came from the file or from itself.
         "line_ending": _line_ending_of(all_lines),
         "progress": [ok(f"Read {len(sliced)} lines from {path.name}")],
     }
-    if truncated:
+    if more_after or result["truncated"]:
         result["hint"] = (
-            f"Use fs_read with start_line/end_line to read other ranges "
-            f"(total_lines={total_lines})."
+            f"Use fs_read with start_line/end_line to read other ranges (total_lines={total_lines})."
         )
     result["token_estimate"] = len(str(result)) // 4
     return result
@@ -223,7 +233,15 @@ def _read_tree(path: Path, depth: int) -> dict:
     max_entries = get_max_tree_entries()
     entries: list[dict] = []
     _collect_tree(path, path, 0, max_depth, entries, max_entries + 1)
-    truncated = len(entries) > max_entries
+
+    # The walk deliberately stops one past the cap, so when it fills up the real
+    # total is unknown -- and counting the rest costs the same walk again over a
+    # tree big enough to have hit the cap. `exact=False` says so: `total` is a
+    # floor, marked as one. That is the honest answer here, and it is what this
+    # mode used to leave out entirely -- `truncated: true` with no denominator
+    # anywhere, the same shape as `fs_index list` before it was fixed.
+    collected = len(entries)
+    truncated = collected > max_entries
     if truncated:
         entries = entries[:max_entries]
 
@@ -233,8 +251,7 @@ def _read_tree(path: Path, depth: int) -> dict:
         "path": str(path),
         "mode": "tree",
         "entries": entries,
-        "returned": len(entries),
-        "truncated": truncated,
+        **counted(len(entries), collected, exact=not truncated),
         "progress": [ok(f"Tree of {path.name}", f"{len(entries)} entries")],
     }
     if truncated:
