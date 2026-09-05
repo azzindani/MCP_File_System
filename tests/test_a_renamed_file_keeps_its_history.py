@@ -23,7 +23,6 @@ no trace.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -47,12 +46,17 @@ def write(op: str, **kw) -> dict:
 
 
 def receipts(p: Path) -> list[str]:
-    log = Path(str(p) + ".mcp_receipt.json")
-    if not log.exists():
-        return []
-    data = json.loads(log.read_text(encoding="utf-8"))
-    entries = data if isinstance(data, list) else data.get("entries", [])
-    return [e.get("op") or e.get("action") for e in entries]
+    """Through the reader, not by parsing the file.
+
+    This used to json.loads the receipt and index into it as a bare list, which
+    made the test a second implementation of the storage format -- and it broke
+    the moment that format grew a scope header, reporting the header as an
+    operation with no name. `read_receipt_log` is the supported way in and knows
+    both the headed and the bare layout.
+    """
+    from shared.receipt import read_receipt_log
+
+    return [e.get("op") or e.get("action") for e in read_receipt_log(str(p))]
 
 
 def versions(p: Path) -> int:

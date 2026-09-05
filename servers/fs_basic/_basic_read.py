@@ -184,13 +184,23 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
     e = min(end_line, s + max_lines, total_lines)
     sliced = all_lines[s:e]
 
-    # Two different questions, which one flag used to answer badly. `truncated`
-    # is measured against the window the caller asked for, bounded by where the
-    # file ends: reading lines 50-100 of a 100-line file returns everything that
-    # was asked for and nothing was withheld, so it is not truncation. What the
-    # old flag actually meant -- "the file continues past here" -- is a paging
-    # signal, and it keeps its own name rather than borrowing this one.
-    eligible = max(0, min(end_line, total_lines) - s)
+    # The denominator is what remained from where the caller started, and two
+    # existing tests pin why nothing simpler works.
+    #
+    # Measured against the *range asked for*, reading 100 lines of a 101-line
+    # file with the default end_line=100 comes back complete -- but the caller
+    # named no range, so the last line vanishes behind a default they never set.
+    # `remote_smoke_test.sh` builds exactly that file (boundary_101.txt, "1 over
+    # the cap") and refuses it.
+    #
+    # Measured against the *whole file*, reading from line 10 of a 25-line file
+    # to EOF comes back truncated having reached the end. `test_fs_basic.py`
+    # calls that out by name as a regression.
+    #
+    # Lines available from `s` satisfies both, and both numbers stay honest:
+    # 100 of the 101 available from position 0, and 15 of the 15 available from
+    # position 10.
+    available_from_start = max(0, total_lines - s)
     more_after = e < total_lines
 
     result: dict = {
@@ -203,7 +213,7 @@ def _read_content(path: Path, start_line: int, end_line: int) -> dict:
         "end_line": e,
         "total_lines": total_lines,
         "more_after": more_after,
-        **counted(len(sliced), eligible),
+        **counted(len(sliced), available_from_start),
         # Now that the endings are the file's own, say which they are: a caller
         # comparing a hash, or writing the lines back somewhere, needs to know
         # whether the "\r" it is looking at came from the file or from itself.

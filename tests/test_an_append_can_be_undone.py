@@ -70,13 +70,16 @@ class TestAnAppendIsSnapshotted:
         assert f.read_text(encoding="utf-8") == "only\n"
 
     def test_the_receipt_names_the_backup(self, tmp_path):
-        import json
 
         f = tmp_path / "log.txt"
         f.write_text("first\n", encoding="utf-8")
         write("append_file", path=str(f), content="second\n")
-        log = json.loads(Path(str(f) + ".mcp_receipt.json").read_text(encoding="utf-8"))
-        entries = log if isinstance(log, list) else log.get("entries", [])
+        # Through the reader: parsing the file here made the test a second
+        # implementation of the storage format, and it broke when that format
+        # grew a scope header.
+        from shared.receipt import read_receipt_log
+
+        entries = read_receipt_log(str(f))
         assert entries[-1].get("backup"), entries[-1]
 
     def test_a_dry_run_still_writes_nothing(self, tmp_path):
@@ -158,14 +161,14 @@ class TestASnapshotCanBePutBack:
         assert "Available timestamps" in got["hint"], got["hint"]
 
     def test_the_restore_is_recorded(self, tmp_path):
-        import json
 
         f = tmp_path / "notes.txt"
         f.write_text("first\n", encoding="utf-8")
         write("replace_text", path=str(f), find="first", replace="second")
         write("restore", path=str(f))
-        log = json.loads(Path(str(f) + ".mcp_receipt.json").read_text(encoding="utf-8"))
-        entries = log if isinstance(log, list) else log.get("entries", [])
+        from shared.receipt import read_receipt_log
+
+        entries = read_receipt_log(str(f))
         assert [e.get("op") or e.get("action") for e in entries][-1] == "restore"
 
     def test_the_vocabulary_names_it(self):

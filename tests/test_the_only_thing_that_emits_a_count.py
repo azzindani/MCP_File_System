@@ -56,7 +56,7 @@ def _py_files() -> list[Path]:
 def _offenders() -> list[str]:
     out: list[str] = []
     for path in _py_files():
-        lines = path.read_text().splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
         for i, line in enumerate(lines):
             if line.strip().startswith("#"):
                 continue  # modules quote the banned string while explaining it
@@ -84,7 +84,7 @@ def test_the_exemption_stays_rare_and_explains_itself():
     """One marker today. A second needs a reason someone chose to write down."""
     marked = []
     for path in _py_files():
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         if _EXEMPT in text:
             marked.append(path.relative_to(ROOT))
             assert "counted(" in text, (
@@ -95,7 +95,7 @@ def test_the_exemption_stays_rare_and_explains_itself():
 
 def test_a_composite_flag_still_ships_the_per_payload_numbers():
     """The override is allowed because nothing is hidden by it."""
-    src = (SERVERS / "fs_basic" / "_basic_query.py").read_text()
+    src = (SERVERS / "fs_basic" / "_basic_query.py").read_text(encoding="utf-8")
     for field in (
         "files_matched",
         "files_truncated",
