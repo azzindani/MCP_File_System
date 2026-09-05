@@ -38,7 +38,14 @@ def _check_file(path: Path) -> list[str]:
             violations.append(f"{path}:{node.lineno}: tool '{node.name}' has no docstring")
             continue
         first_line = docstring.splitlines()[0]
-        if len(first_line) > 80:
+        # The WHOLE docstring, not its first line: the MCP SDK sends
+        # func.__doc__ as the tool description, so a client pays for every
+        # line of it on every tools/list. A first-line check passes a
+        # three-paragraph docstring while this file's own summary claims to
+        # cap tool docstrings at 80 characters. It held only for as long as
+        # every tool here happened to be one line; MCP_Data_Analyst shipped a
+        # 301-character description that its copy of this gate called OK.
+        if len(docstring) > 80:
             violations.append(
                 f"{path}:{node.lineno}: tool '{node.name}' docstring "
                 f"first line is {len(first_line)} chars (max 80): "
