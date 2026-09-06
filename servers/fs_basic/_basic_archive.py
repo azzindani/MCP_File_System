@@ -96,7 +96,7 @@ def run_fs_archive(
     action: str,
     path: str,
     target: str = "",
-    format_: str = "zip",
+    format_: str = "",
     dry_run: bool = False,
 ) -> dict:
     try:
@@ -128,6 +128,16 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
     _format_aliases = {"tar": "tar.gz", "tgz": "tar.gz", "gz": "tar.gz", "gzip": "tar.gz"}
     format_ = _format_aliases.get(format_, format_)
 
+    # Inferred for EVERY action, not just create. `create` read the extension
+    # and `list` did not, so `fs_archive(action="list", path="out/r28.zip")` --
+    # the archive right there in the argument, named .zip -- came back "Unknown
+    # format ''", naming no parameter, from a tool that declares two of them
+    # (`format` and `format_`). Create's own refusal even advises "Drop
+    # `format` and let the extension decide"; list would not.
+    inferred = _format_from_path(path)
+    if action != "create" and not format_:
+        format_ = inferred or format_
+
     if action == "create":
         # `format` used to default to "zip" and the archive's own extension was
         # never consulted, so the obvious call --
@@ -140,7 +150,6 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
         # tool reads, and `tar -xzf` on that file fails. tar.gz is advertised in
         # this tool's own description, so naming the file is a reasonable way
         # to ask for one.
-        inferred = _format_from_path(path)
         if not format_:
             format_ = inferred or "zip"
         elif inferred and inferred != format_:
@@ -154,7 +163,17 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
             )
 
     if format_ not in ("zip", "tar.gz"):
-        return _error("fs_archive", f"Unknown format '{format_}'", "Use 'zip' or 'tar.gz'.")
+        if not format_:
+            return _error(
+                "fs_archive",
+                f"Cannot tell the archive format of '{Path(path).name}'.",
+                "Name the archive .zip or .tar.gz, or pass format='zip' / format='tar.gz'.",
+            )
+        return _error(
+            "fs_archive",
+            f"Unknown format '{format_}'",
+            "Pass format='zip' or format='tar.gz', or drop it and let the extension decide.",
+        )
 
     if action == "create":
         return _action_create(path, target, format_, dry_run)

@@ -86,6 +86,13 @@ RESULT=$(call 7 fs_index '{"action":"query","path":"/tmp/remote-smoke-test","pat
 echo "$RESULT" | grep -qi 'notes.md' && pass "fs_index query found the real indexed file" || fail "unexpected result: $RESULT"
 
 echo
+echo "== prompt: \"what can fs_write actually do?\" -> list_fs_ops =="
+RESULT=$(call 71 list_fs_ops '{"op":"copy"}')
+echo "$RESULT" | grep -q '"src"' && echo "$RESULT" | grep -q '"dst"' \
+  && pass "list_fs_ops named copy's real fields (src/dst), which tools/list cannot show" \
+  || fail "unexpected result: $RESULT"
+
+echo
 echo "== prompt: \"how much disk space is that file using?\" -> fs_manage (disk_usage) =="
 RESULT=$(call 8 fs_manage "{\"action\":\"disk_usage\",\"path\":\"$TEST_PATH\"}")
 echo "$RESULT" | grep -Eq 'success\\?":[[:space:]]*true' && pass "fs_manage(disk_usage) reported real size info for the real file" || fail "unexpected result: $RESULT"

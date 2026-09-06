@@ -53,7 +53,7 @@ except ImportError:  # pragma: no cover - depends which flavour is installed
 _URL = re.compile(r"\s*For further information visit https?://\S+")
 # "Input should be a valid string [type=string_type, input_value=123, input_type=int]"
 _DETAIL = re.compile(
-    r"^\s+(?P<why>.+?)\s*\[type=(?P<kind>[^,\]]+)(?:,[^\]]*input_type=(?P<got>[^,\]]+))?[^\]]*\]\s*$"
+    r"^\s+(?P<why>.+?)\s*\[type=(?P<kind>[^,\]]+)(?:,.*?input_type=(?P<got>[^,\]]+))?\]\s*$"
 )
 
 
