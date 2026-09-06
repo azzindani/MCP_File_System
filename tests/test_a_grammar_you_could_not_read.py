@@ -32,6 +32,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 for _p in (str(ROOT), str(ROOT / "servers" / "fs_basic")):
     if _p not in sys.path:
@@ -87,9 +89,19 @@ class TestAnErrorNamesWhatWasLookedFor:
         assert r["success"] is False
         assert str(missing) in r["error"], r["error"]
 
-    def test_fs_manage_does_the_same(self, tmp_path):
+    @pytest.mark.parametrize("action", ["disk_usage", "permissions", "symlink_info"])
+    def test_fs_manage_does_the_same_for_every_action(self, tmp_path, action):
+        """disk_usage was the one action with no existence check of its own.
+
+        It handed back whatever the OS said, and that string names the path on
+        Linux ("[Errno 2] No such file or directory: '/tmp/...'") and not on
+        Windows ("[WinError 3] The system cannot find the path specified"), so
+        what a caller was told depended on which platform the server ran on.
+        Caught by CI on windows-latest, where the first version of this test
+        passed on Linux for the wrong reason.
+        """
         missing = tmp_path / "nested" / "ads.csv"
-        r = engine.fs_manage("disk_usage", str(missing))
+        r = engine.fs_manage(action, str(missing))
         assert r["success"] is False
         assert str(missing) in r["error"], r["error"]
 

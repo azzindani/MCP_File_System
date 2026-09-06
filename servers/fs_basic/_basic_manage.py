@@ -109,11 +109,25 @@ def _walk_usage(target: Path, budget: int) -> tuple[int, int, bool]:
 
 def _action_disk_usage(path: str) -> dict:
     target = resolve_path(path or str(Path.home()))
+    # The other three actions check this and report the path; disk_usage did
+    # not, and handed back whatever the OS said. On Linux that string happens
+    # to contain the path -- "[Errno 2] No such file or directory: '/tmp/...'"
+    # -- and on Windows it does not: "[WinError 3] The system cannot find the
+    # path specified", naming nothing at all. So the caller's diagnosis
+    # depended on which platform the server ran on.
+    if not target.exists() and not target.is_symlink():
+        return _error(
+            "fs_manage",
+            f"Path does not exist: {target}",
+            "Use fs_query to locate the file first.",
+        )
     try:
         usage = shutil.disk_usage(str(target))
     except Exception as e:
         return _error(
-            "fs_manage", f"Cannot get disk usage: {e}", "Ensure the path exists and is accessible."
+            "fs_manage",
+            f"Cannot get disk usage for {target}: {e}",
+            "Ensure the path exists and is accessible.",
         )
 
     # The action takes a path, echoed it back, and reported the numbers for the
