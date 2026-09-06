@@ -220,9 +220,11 @@ def _action_symlink_info(path: str) -> dict:
         raw = Path.home() / raw
 
     if not raw.exists() and not raw.is_symlink():
+        # As in fs_read: report the path that was looked for, not its last
+        # segment, so an absolute path is not made to look relative.
         return _error(
             "fs_manage",
-            f"Path does not exist: {raw.name}",
+            f"Path does not exist: {raw}",
             "Use fs_query to locate the file first.",
         )
 

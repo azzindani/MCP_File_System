@@ -40,9 +40,14 @@ def run_fs_read(
     except ValueError as e:
         return _error("fs_read", str(e), "Ensure path is absolute and within your home directory.")
     except FileNotFoundError:
+        # The BASENAME was reported for a path the caller gave in full, so
+        # "Path does not exist: ads.csv" came back from an absolute
+        # /workspace/data/r28d/ads.csv and read as though the path had been
+        # taken as relative -- sending the caller to debug the one thing that
+        # was right. Say what was looked for.
         return _error(
             "fs_read",
-            f"Path does not exist: {Path(path).name}",
+            f"Path does not exist: {path}",
             "Use fs_query to locate the file first.",
         )
     except PermissionError:

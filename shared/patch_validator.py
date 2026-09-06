@@ -203,6 +203,93 @@ def known_fields(op_name: str) -> list[str]:
     return sorted(fields)
 
 
+# One example per op, so the catalogue below shows a call rather than describing
+# one. Kept beside the tables it renders with: an op added to ALLOWED_OPS
+# without an entry here is reported by test_every_op_is_discoverable.
+_EXAMPLES: dict[str, dict] = {
+    "write_file": {"op": "write_file", "path": "~/notes.txt", "content": "hello"},
+    "append_file": {"op": "append_file", "path": "~/notes.txt", "content": "one more line"},
+    "create_dir": {"op": "create_dir", "path": "~/reports/2026"},
+    "move": {"op": "move", "src": "~/a.txt", "dst": "~/archive/a.txt"},
+    "copy": {"op": "copy", "src": "~/a.txt", "dst": "~/a.backup.txt"},
+    "rename": {"op": "rename", "path": "~/a.txt", "name": "b.txt"},
+    "replace_text": {"op": "replace_text", "path": "~/a.txt", "find": "old", "replace": "new"},
+    "insert_after": {
+        "op": "insert_after",
+        "path": "~/a.txt",
+        "after_pattern": "# Header",
+        "content": "inserted line",
+    },
+    "delete_lines": {"op": "delete_lines", "path": "~/a.txt", "start_line": 2, "end_line": 4},
+    "patch_lines": {
+        "op": "patch_lines",
+        "path": "~/a.txt",
+        "start_line": 2,
+        "end_line": 4,
+        "content": "replacement",
+    },
+    "delete_request": {"op": "delete_request", "path": "~/a.txt"},
+    "delete_confirm": {"op": "delete_confirm", "token": "del_1a2b3c4d"},
+    "delete_tree_request": {"op": "delete_tree_request", "path": "~/old_reports"},
+    "delete_tree_confirm": {"op": "delete_tree_confirm", "token": "del_1a2b3c4d"},
+    "set_permissions": {"op": "set_permissions", "path": "~/a.txt", "mode": "0644"},
+    "download": {"op": "download", "url": "https://example.com/data.csv", "path": "~/data.csv"},
+    "restore": {"op": "restore", "path": "~/a.txt"},
+}
+
+
+def catalogue(op_name: str = "") -> list[dict]:
+    """Every fs_write op, its fields and a call that works.
+
+    `fs_write` declares `ops` as `list[dict]` with an items schema of
+    `{"additionalProperties": true}`, so the grammar of all seventeen ops is
+    invisible to `tools/list`, and its one-line description names no field. The
+    only way to learn that `copy` takes `src`/`dst` and not `source`/
+    `destination` was to send the wrong one and read the refusal -- which is
+    excellent, and arrives one wasted call too late.
+
+    Rendered from ALLOWED_OPS, _REQUIRED, _OPTIONAL and _FIELD_ALIASES rather
+    than written out again, so the catalogue cannot drift from the validator
+    the way this repo's filter-operator vocabulary once did.
+    """
+    wanted = sorted(ALLOWED_OPS) if not op_name else [op_name]
+    out: list[dict] = []
+    for name in wanted:
+        required = list(_REQUIRED.get(name, []))
+        optional = sorted(set(known_fields(name)) - set(required) - {"op"})
+        entry: dict = {
+            "op": name,
+            "required": required,
+            "optional": optional,
+            "destructive": name in _DESTRUCTIVE_OPS,
+        }
+        example = _EXAMPLES.get(name)
+        if example:
+            entry["example"] = example
+        out.append(entry)
+    return out
+
+
+# The ops that change or remove what is already on disk. Named so the catalogue
+# can say which calls take a snapshot first, rather than leaving a caller to
+# find out by running one.
+_DESTRUCTIVE_OPS: frozenset[str] = frozenset(
+    {
+        "move",
+        "rename",
+        "replace_text",
+        "insert_after",
+        "delete_lines",
+        "patch_lines",
+        "delete_request",
+        "delete_confirm",
+        "delete_tree_request",
+        "delete_tree_confirm",
+        "restore",
+    }
+)
+
+
 def _did_you_mean(unknown: str, known: list[str]) -> str:
     """The closest accepted name, when one is obviously close."""
     import difflib

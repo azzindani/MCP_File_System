@@ -11,6 +11,49 @@ from _basic_query import run_fs_query
 from _basic_read import run_fs_read
 from _basic_write import run_fs_write
 
+from shared.patch_validator import ALLOWED_OPS, _did_you_mean, catalogue
+
+
+def list_fs_ops(op: str = "") -> dict:
+    """The fs_write op grammar, which tools/list cannot show.
+
+    `ops` is declared `list[dict]` with an items schema of
+    `{"additionalProperties": true}`, so every field of every op is invisible
+    to a caller reading the schema, and fs_write's one-line description names
+    none of them. This is the same gap `list_patch_ops` and `list_derive_ops`
+    close in the Data_Analyst repo; filesystem had the refusal half -- which
+    does name the accepted fields -- and not the discovery half, so the grammar
+    could only be learned by getting it wrong first.
+    """
+    if op and op not in ALLOWED_OPS:
+        near = _did_you_mean(op, sorted(ALLOWED_OPS))
+        lead = f"Did you mean '{near}'? " if near else ""
+        return {
+            "success": False,
+            "op": "list_fs_ops",
+            "error": f"Unknown fs_write op: '{op}'.",
+            "hint": f"{lead}Valid ops: {', '.join(sorted(ALLOWED_OPS))}.",
+            "progress": [],
+            "token_estimate": 60,
+        }
+
+    ops = catalogue(op)
+    result: dict = {
+        "success": True,
+        "op": "list_fs_ops",
+        "requested": op or "all",
+        "total_ops": len(ops),
+        "ops": ops,
+        "hint": (
+            "Send these to fs_write as ops=[{...}]. Every op takes its `op` name plus the "
+            "fields listed; `destructive: true` means fs_write snapshots the file first and "
+            "fs_manage(action='versions') lists the snapshots."
+        ),
+        "progress": [],
+    }
+    result["token_estimate"] = len(str(result)) // 4
+    return result
+
 
 def fs_query(
     pattern: str = "",
@@ -84,7 +127,11 @@ def fs_archive(
     action: str,
     path: str,
     target: str = "",
-    format_: str = "zip",
+    # "" means "read it off the archive's extension". The server has always
+    # passed "" and this said "zip", so the engine default was dead for every
+    # MCP caller and live for every direct one -- two behaviours behind one
+    # signature. `create` still falls back to zip when the name says nothing.
+    format_: str = "",
     dry_run: bool = False,
 ) -> dict:
     return run_fs_archive(

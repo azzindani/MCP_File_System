@@ -128,8 +128,21 @@ def fs_read(
     )
 )
 def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
-    """Write, edit, move, copy, download a URL, restore. Delete needs a token."""
+    """Write, edit, move, copy, download, restore. Op grammar: call list_fs_ops."""
     return engine.fs_write(ops=ops, dry_run=dry_run)
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
+def list_fs_ops(op: str = "") -> dict:
+    """List fs_write ops with their fields and an example. Omit op for all."""
+    return engine.list_fs_ops(op)
 
 
 @mcp.tool(
