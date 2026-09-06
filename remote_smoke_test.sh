@@ -87,8 +87,11 @@ echo "$RESULT" | grep -qi 'notes.md' && pass "fs_index query found the real inde
 
 echo
 echo "== prompt: \"what can fs_write actually do?\" -> list_fs_ops =="
-RESULT=$(call 71 list_fs_ops '{"op":"copy"}')
-echo "$RESULT" | grep -q '"src"' && echo "$RESULT" | grep -q '"dst"' \
+RESULT=$(call 10 list_fs_ops '{"op":"copy"}')
+# A tool result arrives as the JSON *string* result.content[0].text, so every
+# quote in it is backslash-escaped on the wire. Matching '"src"' finds nothing;
+# the rest of this file already accounts for that with \\?".
+echo "$RESULT" | grep -Eq '\\?"src\\?"' && echo "$RESULT" | grep -Eq '\\?"dst\\?"' \
   && pass "list_fs_ops named copy's real fields (src/dst), which tools/list cannot show" \
   || fail "unexpected result: $RESULT"
 
