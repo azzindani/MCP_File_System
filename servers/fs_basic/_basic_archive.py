@@ -31,6 +31,20 @@ _S_IFLNK = 0o120000
 _LINK_ATTR = (_S_IFLNK | 0o777) << 16
 
 
+def _format_from_path(path: str) -> str:
+    """The format the archive's own name asks for, or "" if it does not say.
+
+    Checked before ``.suffix`` alone would do, because ``Path("a.tar.gz").suffix``
+    is ``".gz"`` and the double extension is the common way to write it.
+    """
+    name = Path(path).name.lower()
+    if name.endswith((".tar.gz", ".tgz", ".tar")):
+        return "tar.gz"
+    if name.endswith(".zip"):
+        return "zip"
+    return ""
+
+
 def _is_zip_symlink(zi: zipfile.ZipInfo) -> bool:
     return (zi.external_attr >> 16) & 0o170000 == _S_IFLNK
 
@@ -113,6 +127,32 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
         )
     _format_aliases = {"tar": "tar.gz", "tgz": "tar.gz", "gz": "tar.gz", "gzip": "tar.gz"}
     format_ = _format_aliases.get(format_, format_)
+
+    if action == "create":
+        # `format` used to default to "zip" and the archive's own extension was
+        # never consulted, so the obvious call --
+        #
+        #     fs_archive(action="create", path="out.tar.gz", target=...)
+        #
+        # wrote ZIP bytes into a file named .tar.gz and reported format: "zip"
+        # beside success: true. The response was honest and the filename was
+        # not, which is the wrong way round: the extension is what the next
+        # tool reads, and `tar -xzf` on that file fails. tar.gz is advertised in
+        # this tool's own description, so naming the file is a reasonable way
+        # to ask for one.
+        inferred = _format_from_path(path)
+        if not format_:
+            format_ = inferred or "zip"
+        elif inferred and inferred != format_:
+            # An explicit format contradicting the name is the original bug
+            # requested on purpose. Refuse rather than write the mismatch.
+            return _error(
+                "fs_archive",
+                f"format '{format_}' contradicts the extension of '{Path(path).name}'.",
+                f"That writes {format_} bytes into a name meaning {inferred}. Drop `format` "
+                f"and let the extension decide, or rename the archive.",
+            )
+
     if format_ not in ("zip", "tar.gz"):
         return _error("fs_archive", f"Unknown format '{format_}'", "Use 'zip' or 'tar.gz'.")
 

@@ -180,7 +180,10 @@ def fs_archive(
     action: str,
     path: str,
     target: str = "",
-    format_: str = "zip",
+    # "" means "read it off the archive's extension", which is what a
+    # caller naming the file out.tar.gz is asking for. It used to default
+    # to "zip" and the extension was never consulted.
+    format_: str = "",
     dry_run: bool = False,
     format: str = "",
 ) -> dict:
