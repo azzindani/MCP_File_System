@@ -237,7 +237,16 @@ Create and extract zip / tar.gz archives using Python stdlib only — zero exter
 | `extract` | Unpack archive at `path` into `target` directory |
 | `list` | List archive contents without extracting |
 
-`format_`: `"zip"` or `"tar.gz"`. `dry_run=True` previews without touching disk.
+`format_`: `"zip"` or `"tar.gz"`. **Leave it unset and the archive's own
+extension decides** — `.tar.gz`, `.tgz` and `.tar` mean tar.gz, `.zip` means
+zip, and a name that says nothing defaults to zip. An explicit `format_` that
+contradicts the extension is refused rather than written: it used to default to
+`"zip"` with the extension never consulted, so `create` with `path="out.tar.gz"`
+wrote ZIP bytes into a file named `.tar.gz` and reported `format: "zip"` beside
+`success: true` — honest in the response, wrong in the filename, which is the
+wrong way round because the extension is what the next tool reads.
+
+`dry_run=True` previews without touching disk.
 Extraction into a directory with conflicting files requires `overwrite=True`.
 
 ---
