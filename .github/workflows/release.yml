@@ -53,16 +53,38 @@ jobs:
       contents: write
 
     steps:
+      # Full history: the changelog step below diffs against the previous tag,
+      # and a depth-1 checkout has neither the tags nor the commits.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # No `uv build` here, and no dist/* attachment. This server is installed
       # from source (install/install.sh clones the tag) or run as a container —
       # nothing has ever installed the wheel, so building one made every
       # release depend on the packaging metadata staying valid for a file
       # nobody downloads. GitHub still attaches its own source archives.
+      # `generate_release_notes` alone lists merged PRs, and this repo pushes
+      # straight to main -- so v0.2.0's page was published with nothing on it
+      # but a compare link. The commit subjects are the record here; write them.
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${GITHUB_REF#refs/tags/}" ]; then
+            LOG=$(git log --oneline --no-decorate | head -50)
+          else
+            LOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD" | head -50)
+          fi
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$LOG" | sed 's/^/- /'
+          } > /tmp/changelog.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: /tmp/changelog.txt
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
