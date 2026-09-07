@@ -29,7 +29,7 @@ from shared.patch_validator import ALLOWED_OPS  # noqa: E402
 from shared.schema_enum import any_of, one_of  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
-_VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.2.0"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("FS_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("FS_PORT", "8801"))
 _oauth_bridge = build_oauth_bridge("FS")

@@ -2,11 +2,11 @@
 
 A self-hosted MCP server that gives local LLMs structured access to file management tools. No cloud APIs, no API keys — everything runs on your machine.
 
-**Release [`v0.1.2`](https://github.com/azzindani/MCP_File_System/releases/tag/v0.1.2)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
+**Release [`v0.2.0`](https://github.com/azzindani/MCP_File_System/releases/tag/v0.2.0)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
 
 ## Features
 
-- **6 tools** in a single server: `fs_query`, `fs_read`, `fs_write`, `fs_index`, `fs_manage`, `fs_archive`
+- **7 tools** in a single server: `fs_query`, `fs_read`, `fs_write`, `fs_index`, `fs_manage`, `fs_archive`, `list_fs_ops`
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical file edits
 - **Automatic version control** — every destructive write is snapshotted and fully restorable
 - **Operation receipt logging** — full audit trail of all modifications per file
@@ -81,7 +81,7 @@ The first launch clones the repo and installs dependencies (~1-3 minutes). Subse
 ```
 
 4. Wait for the blue dot next to the server
-5. Start chatting — the model will see all 6 tools
+5. Start chatting — the model will see all 7 tools
 
 ### macOS / Linux
 
@@ -249,6 +249,31 @@ wrong way round because the extension is what the next tool reads.
 `dry_run=True` previews without touching disk.
 Extraction into a directory with conflicting files requires `overwrite=True`.
 
+An unrecognised `format_` is refused as unknown before anything else is
+checked, and that refusal names both legal values. It is not reported as
+contradicting the extension: a value that is not a format cannot contradict
+one, and the "rename the archive" the contradiction message offers would not
+have been a way out of it.
+
+### list_fs_ops — THE `fs_write` GRAMMAR
+
+`fs_write` takes `ops=[{op, …}]`, and the fields each op needs live inside a
+`list[dict]` that the JSON schema cannot describe. That left one way to learn
+the grammar: send a call and read the refusal. `copy` wants `src` and `dst`,
+not `source` and `destination`, and nothing said so.
+
+| Argument | Description |
+|---|---|
+| `op` | The op to describe — `create_dir`, `copy`, `move`, `write`, `append`, `delete`, … |
+| *(omitted)* | Every op, each with its required fields, optional fields, accepted aliases, and a worked example |
+
+```
+What can fs_write actually do?
+```
+
+Read-only, and its answer is rendered from the same table `fs_write` validates
+against, so the two cannot drift apart.
+
 ---
 
 ## Usage Examples
@@ -377,7 +402,7 @@ bind-mount only the directory tree you want it to manage.
 
 ```bash
 FS_TRANSPORT=http FS_PORT=8801 uv run python servers/fs_basic/server.py
-curl http://localhost:8801/health   # {"status":"ok","version":"0.1.2"}
+curl http://localhost:8801/health   # {"status":"ok","version":"0.2.0"}
 ```
 
 ### Docker
@@ -437,8 +462,8 @@ requires a bearer token even while it's publicly reachable.
 
 Run in CI against a container (the `e2e` job) and by hand against the
 deployment. `pytest` itself stays offline. Exercises a running HTTP endpoint: auth enforcement plus a real
-handwritten-prompt-style call for **all 6 tools** (`fs_query`, `fs_read`,
-`fs_write`, `fs_index`, `fs_manage`, `fs_archive`), against real seeded files
+handwritten-prompt-style call for **all 7 tools** (`fs_query`, `fs_read`,
+`fs_write`, `fs_index`, `fs_manage`, `fs_archive`, `list_fs_ops`), against real seeded files
 in the container. This is what caught the root-owned `/home/app` bug blocking
 `fs_index`'s default index path.
 
@@ -478,7 +503,7 @@ mcp-filesystem/
 │   ├── patch_validator.py       ← validate op arrays before execution
 │   └── confirm_store.py         ← in-memory deletion token store (5-min expiry)
 ├── servers/
-│   └── fs_basic/                ← single Tier 1 server (6 tools)
+│   └── fs_basic/                ← single Tier 1 server (7 tools)
 │       ├── server.py            ← thin MCP wrapper; each tool is one engine call
 │       ├── engine.py            ← thin router; zero MCP imports
 │       ├── _basic_helpers.py    ← shared imports, constants, _error helper
@@ -493,7 +518,7 @@ mcp-filesystem/
 │   │   ├── messy/               ← 4-level nesting, unicode names, symlinks
 │   │   └── large/               ← 5 000+ files for truncation + index tests
 │   ├── conftest.py
-│   └── test_fs_basic.py         ← all 6 tools, all modes, all ops, all error paths
+│   └── test_fs_basic.py         ← all 7 tools, all modes, all ops, all error paths
 ├── install/
 │   ├── install.sh               ← POSIX sh installer
 │   ├── install.bat              ← Windows CMD installer
