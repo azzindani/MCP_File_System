@@ -138,6 +138,21 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
     if action != "create" and not format_:
         format_ = inferred or format_
 
+    # Validity is the earlier question than contradiction. Round 29 sent
+    # format='zzqq_no_such_choice' at a path named .zip and got back "format
+    # 'zzqq_no_such_choice' contradicts the extension of 'z2.zip'", under the
+    # hint "That writes zzqq_no_such_choice bytes into a name meaning zip" --
+    # the create branch below fired first and described a value that is not a
+    # format at all as though it were a real one competing with the extension.
+    # An unknown format is unknown whatever the file is called, and its refusal
+    # is the one that names the two legal values.
+    if format_ and format_ not in ("zip", "tar.gz"):
+        return _error(
+            "fs_archive",
+            f"Unknown format '{format_}'",
+            "Pass format='zip' or format='tar.gz', or drop it and let the extension decide.",
+        )
+
     if action == "create":
         # `format` used to default to "zip" and the archive's own extension was
         # never consulted, so the obvious call --
@@ -162,17 +177,13 @@ def _fs_archive(action: str, path: str, target: str, format_: str, dry_run: bool
                 f"and let the extension decide, or rename the archive.",
             )
 
-    if format_ not in ("zip", "tar.gz"):
-        if not format_:
-            return _error(
-                "fs_archive",
-                f"Cannot tell the archive format of '{Path(path).name}'.",
-                "Name the archive .zip or .tar.gz, or pass format='zip' / format='tar.gz'.",
-            )
+    # Anything unrecognised was refused above, and `create` has just defaulted
+    # from the extension, so the only case left is a name that says nothing.
+    if not format_:
         return _error(
             "fs_archive",
-            f"Unknown format '{format_}'",
-            "Pass format='zip' or format='tar.gz', or drop it and let the extension decide.",
+            f"Cannot tell the archive format of '{Path(path).name}'.",
+            "Name the archive .zip or .tar.gz, or pass format='zip' / format='tar.gz'.",
         )
 
     if action == "create":
