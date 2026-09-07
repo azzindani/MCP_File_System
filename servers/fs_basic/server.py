@@ -15,6 +15,8 @@ for _p in (str(_root_dir), str(_this_dir)):
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
+from typing import TYPE_CHECKING  # noqa: E402
+
 import engine  # noqa: E402
 from deploy_auth import build_auth, build_oauth_bridge  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
@@ -23,6 +25,8 @@ from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 
 from shared.arg_errors import contract_errors  # noqa: E402
+from shared.patch_validator import ALLOWED_OPS  # noqa: E402
+from shared.schema_enum import any_of, one_of  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
 _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
@@ -38,6 +42,27 @@ mcp = FastMCP(
     token_verifier=_token_verifier,
     auth=_auth_settings,
 )
+
+# The legal values each dispatch parameter names in its schema. Rendered
+# from the table the runtime switches on -- never a second copy -- and split
+# on TYPE_CHECKING because a call expression is not a type expression to a
+# static checker, while a checker only needs to know these are strings.
+if TYPE_CHECKING:
+    FsEntryType = str
+    FsReadMode = str
+    FsWriteOp = str
+    FsIndexAction = str
+    FsManageAction = str
+    FsArchiveAction = str
+    ArchiveFormat = str
+else:
+    FsEntryType = one_of("file", "dir", "any")
+    FsReadMode = one_of("auto", "content", "meta", "tree", "diff")
+    FsWriteOp = any_of(ALLOWED_OPS)
+    FsIndexAction = one_of("query", "build", "list", "stats", "receipt", "clear")
+    FsManageAction = one_of("disk_usage", "permissions", "symlink_info", "versions")
+    FsArchiveAction = one_of("create", "extract", "list")
+    ArchiveFormat = one_of("zip", "tar.gz")
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(mcp)
 
@@ -65,14 +90,14 @@ async def version(request: Request) -> JSONResponse:
 def fs_query(
     pattern: str = "",
     path: str = "",
-    type_: str = "any",
+    type_: FsEntryType = "any",
     content: str = "",
     grep_mode: bool = False,
     context_lines: int = 0,
     include_meta: bool = False,
     follow_symlinks: bool = False,
     max_results: int = 50,
-    type: str = "",
+    type: FsEntryType = "",
     regex: bool = False,
 ) -> dict:
     """Find files by name/content. content is literal unless regex=True."""
@@ -100,7 +125,7 @@ def fs_query(
 )
 def fs_read(
     path: str,
-    mode: str = "auto",
+    mode: FsReadMode = "auto",
     start_line: int = 0,
     end_line: int = 100,
     depth: int = 2,
@@ -140,7 +165,7 @@ def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
         openWorldHint=False,
     )
 )
-def list_fs_ops(op: str = "") -> dict:
+def list_fs_ops(op: FsWriteOp = "") -> dict:
     """List fs_write ops with their fields and an example. Omit op for all."""
     return engine.list_fs_ops(op)
 
@@ -154,7 +179,7 @@ def list_fs_ops(op: str = "") -> dict:
     )
 )
 def fs_index(
-    action: str = "query",
+    action: FsIndexAction = "query",
     path: str = "",
     pattern: str = "",
     max_results: int = 50,
@@ -176,7 +201,7 @@ def fs_index(
         openWorldHint=False,
     )
 )
-def fs_manage(action: str, path: str = "") -> dict:
+def fs_manage(action: FsManageAction, path: str = "") -> dict:
     """Disk usage, permissions, symlink info, or snapshot version list."""
     return engine.fs_manage(action=action, path=path)
 
@@ -190,15 +215,15 @@ def fs_manage(action: str, path: str = "") -> dict:
     )
 )
 def fs_archive(
-    action: str,
+    action: FsArchiveAction,
     path: str,
     target: str = "",
     # "" means "read it off the archive's extension", which is what a
     # caller naming the file out.tar.gz is asking for. It used to default
     # to "zip" and the extension was never consulted.
-    format_: str = "",
+    format_: ArchiveFormat = "",
     dry_run: bool = False,
-    format: str = "",
+    format: ArchiveFormat = "",
 ) -> dict:
     # Three sweeps running, the first call to this tool passed the archive as
     # `target` and the payload as `path` -- the natural reading of the two
