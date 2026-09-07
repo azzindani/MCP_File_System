@@ -150,3 +150,65 @@ class TestAnUnknownFormatIsStillRefused:
         result = _fs_archive("create", str(tmp_path / "out"), str(payload), "rar", False)
         assert result["success"] is False
         assert "rar" in result["error"]
+
+
+class TestAnUnknownFormatIsNotAContradiction:
+    """The test above passed while the defect was live, because it used the one
+    path shape that hides it: `out`, with no extension, so nothing was inferred
+    and the contradiction branch could not fire.
+
+    Give the archive a name and the order of the two checks starts to matter.
+    Round 29 sent `format='zzqq_no_such_choice'` at a path called `z2.zip` and
+    got back
+
+        format 'zzqq_no_such_choice' contradicts the extension of 'z2.zip'.
+        That writes zzqq_no_such_choice bytes into a name meaning zip.
+
+    -- a refusal describing a value that is not a format at all as a real one
+    competing with the extension, and offering the caller "rename the archive"
+    as a way out. Renaming it would not have helped. Validity is the earlier
+    question, and its refusal is the one that names the two legal values.
+    """
+
+    @pytest.mark.parametrize("name", ["out.zip", "out.tar.gz", "out.tgz"])
+    def test_an_unknown_format_is_called_unknown(self, tmp_path, payload, name):
+        result = _fs_archive(
+            "create", str(tmp_path / name), str(payload), "zzqq_no_such_choice", False
+        )
+        assert result["success"] is False
+        assert "Unknown format" in result["error"], result["error"]
+        assert "contradicts" not in result["error"], (
+            "an unrecognised value was reported as a competing format"
+        )
+
+    @pytest.mark.parametrize("name", ["out.zip", "out.tar.gz"])
+    def test_and_the_refusal_names_both_legal_values(self, tmp_path, payload, name):
+        blob = " ".join(
+            str(_fs_archive("create", str(tmp_path / name), str(payload), "rar", False).get(k, ""))
+            for k in ("error", "hint")
+        )
+        assert "zip" in blob and "tar.gz" in blob, blob
+
+    def test_and_nothing_is_written(self, tmp_path, payload):
+        out = tmp_path / "out.zip"
+        _fs_archive("create", str(out), str(payload), "rar", False)
+        assert not out.exists()
+
+    def test_a_real_format_that_contradicts_still_says_contradicts(self, tmp_path, payload):
+        """The reorder must not swallow the case it was put in front of."""
+        result = _fs_archive("create", str(tmp_path / "out.tar.gz"), str(payload), "zip", False)
+        assert result["success"] is False
+        assert "contradicts" in result["error"]
+        assert "Unknown format" not in result["error"]
+
+    @pytest.mark.parametrize("action", ["extract", "list"])
+    def test_the_other_actions_refuse_it_too(self, tmp_path, payload, action):
+        """`format` is inferred for every action, so every action can be handed
+        a bad one."""
+        archive = tmp_path / "real.zip"
+        _create(archive, payload)
+        result = _fs_archive(
+            action, str(archive), str(tmp_path / "dest"), "zzqq_no_such_choice", False
+        )
+        assert result["success"] is False
+        assert "Unknown format" in result["error"], result["error"]
