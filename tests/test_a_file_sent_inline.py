@@ -72,7 +72,9 @@ class TestTheBytesAreRead:
 
     def test_only_a_data_uri_is_inline(self):
         assert is_inline(_uri()) and is_inline("DATA:text/plain,hi")
-        assert not is_inline("sales.csv") and not is_inline("https://x/data.csv") and not is_inline(3)
+        assert (
+            not is_inline("sales.csv") and not is_inline("https://x/data.csv") and not is_inline(3)
+        )
 
 
 class TestItLandsInTheInbox:
@@ -96,7 +98,9 @@ class TestItLandsInTheInbox:
 class TestEveryToolTakesIt:
     def _registered(self, fn):
         tool = SimpleNamespace(name=fn.__name__, fn=fn)
-        accept_inline_files(SimpleNamespace(_tool_manager=SimpleNamespace(_tools={tool.name: tool})))
+        accept_inline_files(
+            SimpleNamespace(_tool_manager=SimpleNamespace(_tools={tool.name: tool}))
+        )
         return tool.fn
 
     def test_the_tool_sees_a_path_and_never_the_bytes(self, inbox):
@@ -106,7 +110,9 @@ class TestEveryToolTakesIt:
             seen.update(file_path=file_path, files=files)
             return {"success": True, "file_path": file_path}
 
-        result = self._registered(read_it)(file_path=_uri(), files=[_uri(name="b.csv"), "plain.csv"])
+        result = self._registered(read_it)(
+            file_path=_uri(), files=[_uri(name="b.csv"), "plain.csv"]
+        )
         assert seen["file_path"] == str(inbox / "sales.csv")
         assert seen["files"] == [str(inbox / "b.csv"), "plain.csv"]
         assert "base64" not in str(result)
@@ -129,7 +135,10 @@ class TestEveryToolTakesIt:
         def read_it(file_path: str) -> dict:
             return {"success": True, "file_path": file_path}
 
-        assert self._registered(read_it)(file_path="sales.csv") == {"success": True, "file_path": "sales.csv"}
+        assert self._registered(read_it)(file_path="sales.csv") == {
+            "success": True,
+            "file_path": "sales.csv",
+        }
         assert not inbox.exists()
 
 
