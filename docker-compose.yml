@@ -41,6 +41,12 @@ services:
       # directory's public URL, and every file written there comes back with a
       # `public_url` the caller can actually open.
       MCP_OUTPUT_DIR: ${MCP_OUTPUT_DIR:-/files}
+      # Every path a caller names must lie inside MCP_OUTPUT_DIR or one of
+      # MCP_ALLOWED_ROOTS (":"-separated), judged after symlinks resolve.
+      # Unconfined, any authenticated caller could read, overwrite or delete
+      # anything the container can -- /proc/self/environ holds the API keys.
+      MCP_CONFINE_PATHS: ${MCP_CONFINE_PATHS:-1}
+      MCP_ALLOWED_ROOTS: ${MCP_ALLOWED_ROOTS:-/data}
       MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-}
       # Off by default. With it on, fs_write's `download` op can fetch an
       # http(s) URL to a local path. Hosts resolving to loopback/link-local/
@@ -55,7 +61,8 @@ services:
       # comment out if you use FS_TOKENS (inline) or FS_API_KEY instead.
       - ./tokens.json:/home/app/tokens.json:ro
       # The directory tree fs_basic is allowed to manage. Tool calls must use
-      # paths under this mount (e.g. /data/notes.md).
+      # paths under this mount (e.g. /data/notes.md) or MCP_OUTPUT_DIR's --
+      # MCP_CONFINE_PATHS enforces it.
       - ./fs-root:/data
       # Shared output directory (see MCP_OUTPUT_DIR above) — the half of the
       # filesystem other services and the outside world can also see. The

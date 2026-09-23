@@ -18,7 +18,7 @@ A self-hosted MCP server that gives local LLMs structured access to file managem
 - **Cross-platform name search** — Everything (Windows), mdfind (macOS), locate (Linux), pure Python fallback
 - **Cross-platform content search** — ripgrep if available, pure Python `re` fallback
 - **Symlink safety** — `follow_symlinks=False` by default, prevents infinite loops
-- **Path traversal prevention** — every path resolved and validated against the user's home directory
+- **Path confinement over HTTP** — a local install works anywhere; an HTTP deployment serves only its own folders (`MCP_OUTPUT_DIR`, `MCP_ALLOWED_ROOTS`), judged after symlinks resolve
 - **Modular architecture** — engine split into focused sub-modules, all under 1 000 lines
 
 ## Quick Install (LM Studio)
@@ -360,6 +360,8 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | `MCP_FETCH_URLS` | `0` | `1` enables the `download` op in `fs_write` |
 | `MCP_FETCH_ALLOW_PRIVATE` | `0` | `1` permits fetching hosts on private/loopback addresses |
 | `MCP_MAX_FETCH_MB` | `100` | Size cap for a downloaded URL |
+| `MCP_CONFINE_PATHS` | `1` over HTTP, else `0` | Holds every path to the served folders; a relative path is read from `MCP_OUTPUT_DIR` |
+| `MCP_ALLOWED_ROOTS` | _(unset; compose: `/data`)_ | Extra folders a confined server serves, separated by `:` (`;` on Windows) |
 
 ### Hybrid local + remote file handling
 

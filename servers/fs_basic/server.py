@@ -260,6 +260,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.transport == "http":
+        # A remote caller shares no filesystem with this server, so it reads and
+        # writes only the folders it serves. A local stdio install is the
+        # caller's own machine and keeps working anywhere.
+        os.environ.setdefault("MCP_CONFINE_PATHS", "1")
         # uvicorn is driven here rather than through mcp.run("streamable-http")
         # because the SDK builds uvicorn.Config without timeout_keep_alive, so
         # the server closes an idle connection after uvicorn's 5s default and

@@ -11,6 +11,7 @@ from _basic_helpers import (
     get_default_output_dir,
     info,
     ok,
+    path_hint,
     resolve_path,
     size_kb,
     warn,
@@ -102,7 +103,9 @@ def run_fs_archive(
     try:
         return _fs_archive(action, path, target, format_, dry_run)
     except ValueError as e:
-        return _error("fs_archive", str(e), "Ensure all paths are within your home directory.")
+        return _error(
+            "fs_archive", str(e), path_hint(e, "Ensure all paths are within your home directory.")
+        )
     except FileNotFoundError as e:
         # "Check archive path, target, and format" never said which of the three
         # was wrong. For extract and list the missing path is always `path`.

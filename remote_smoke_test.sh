@@ -273,4 +273,11 @@ RESULT=$(call 80 fs_write "{\"ops\":[{\"op\":\"write_file\",\"path\":\"/tmp/remo
 echo "$RESULT" | grep -q 'content_encoding' && pass "encoding= refused, and the refusal names content_encoding" || fail "encoding= was dropped instead of refused -> $RESULT"
 
 echo
+echo "== a path outside the served folders is refused, and says why =="
+RESULT=$(call 81 fs_read '{"path":"/etc/hostname"}')
+echo "$RESULT" | grep -q 'outside the folders' && pass "/etc/hostname refused, naming the served folders" || fail "a path outside the served folders was not refused -> $RESULT"
+RESULT=$(call 82 fs_write '{"ops":[{"op":"write_file","path":"/tmp/escaped_probe.txt","content":"x"}]}')
+echo "$RESULT" | grep -q 'outside the folders' && pass "a write outside the served folders refused" || fail "a write outside the served folders was not refused -> $RESULT"
+
+echo
 echo "ALL 6 TOOLS + boundary regression + restore round trip PASSED against $DOMAIN"
