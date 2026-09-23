@@ -26,6 +26,7 @@ from starlette.responses import JSONResponse  # noqa: E402
 
 from shared.arg_errors import contract_errors  # noqa: E402
 from shared.patch_validator import ALLOWED_OPS  # noqa: E402
+from shared.retired import retire  # noqa: E402
 from shared.schema_enum import any_of, one_of  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
@@ -153,7 +154,7 @@ def fs_read(
     )
 )
 def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
-    """Write, edit, move, copy, download, restore. Op grammar: call list_fs_ops."""
+    """Write, edit, move, copy, download, restore. ops=[] lists every op's fields."""
     return engine.fs_write(ops=ops, dry_run=dry_run)
 
 
@@ -239,6 +240,11 @@ def fs_archive(
         dry_run=dry_run,
     )
 
+
+# fs_write(ops=[]) answers the op grammar itself, so list_fs_ops leaves
+# tools/list -- one name fewer read on every turn. It still answers, and says
+# where the grammar lives now.
+retire(mcp, {"list_fs_ops": "fs_write(ops=[])"})
 
 # The bundled FastMCP ignores an argument a tool does not declare, so a wrong
 # name yields a plausible answer with the argument silently dropped. Refuse it,

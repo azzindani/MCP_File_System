@@ -38,15 +38,21 @@ def _dispatch_params():
     from servers.fs_basic import server as fs
 
     for app, label in [(fs.mcp, "filesystem")]:
-        for tool in asyncio.run(app.list_tools()):
-            props = (tool.inputSchema or {}).get("properties") or {}
+        # Every tool a caller can call, listed or retired (shared/retired.py): a
+        # retired name is unlisted but still answers, so what it declares must
+        # still match what it switches on.
+        unlisted = getattr(app._tool_manager.list_tools, "__retired__", set())
+        tools = {t.name: t.inputSchema for t in asyncio.run(app.list_tools())}
+        tools.update({n: app._tool_manager._tools[n].parameters for n in unlisted})
+        for name, schema in tools.items():
+            props = (schema or {}).get("properties") or {}
             for param, spec in props.items():
                 if DISPATCH.match(param):
                     # A list parameter carries its enum on the ITEM schema --
                     # `models: list[one_of(...)]` -- so that is where to look.
                     if spec.get("type") == "array" and isinstance(spec.get("items"), dict):
                         spec = spec["items"]
-                    yield f"{label}/{tool.name}.{param}", spec
+                    yield f"{label}/{name}.{param}", spec
 
 
 def test_the_census_finds_them():

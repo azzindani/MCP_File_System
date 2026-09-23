@@ -102,6 +102,18 @@ def fs_read(
 
 
 def fs_write(ops: list[dict], dry_run: bool = False) -> dict:
+    # An empty `ops` asks what the ops are. The grammar used to be a tool of
+    # its own, list_fs_ops -- one more name in tools/list, read on every turn,
+    # for something only fs_write needs. Nothing is written.
+    if not ops:
+        grammar = list_fs_ops()
+        grammar["op"] = "fs_write"
+        grammar["ops_applied"] = 0
+        grammar["hint"] = (
+            "Nothing was written: ops was empty, so this is the op grammar. " + grammar["hint"]
+        )
+        grammar["token_estimate"] = len(str(grammar)) // 4
+        return grammar
     return run_fs_write(ops=ops, dry_run=dry_run)
 
 

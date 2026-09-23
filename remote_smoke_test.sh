@@ -86,8 +86,17 @@ RESULT=$(call 7 fs_index '{"action":"query","path":"/tmp/remote-smoke-test","pat
 echo "$RESULT" | grep -qi 'notes.md' && pass "fs_index query found the real indexed file" || fail "unexpected result: $RESULT"
 
 echo
-echo "== prompt: \"what can fs_write actually do?\" -> list_fs_ops =="
+echo "== prompt: \"what can fs_write actually do?\" -> fs_write(ops=[]) =="
+RESULT=$(call 11 fs_write '{"ops":[]}')
+echo "$RESULT" | grep -Eq '\\?"total_ops\\?": 17' && echo "$RESULT" | grep -q 'Nothing was written' \
+  && pass "fs_write(ops=[]) answered all 17 ops' grammar and wrote nothing" \
+  || fail "unexpected result: $RESULT"
+
+echo
+echo "== list_fs_ops is unlisted but still answers, naming fs_write(ops=[]) =="
 RESULT=$(call 10 list_fs_ops '{"op":"copy"}')
+echo "$RESULT" | grep -q 'use fs_write(ops=\[\])' && pass "list_fs_ops names its successor" \
+  || fail "no successor named: $RESULT"
 # A tool result arrives as the JSON *string* result.content[0].text, so every
 # quote in it is backslash-escaped on the wire. Matching '"src"' finds nothing;
 # the rest of this file already accounts for that with \\?".
