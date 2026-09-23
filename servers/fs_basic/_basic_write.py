@@ -25,6 +25,7 @@ from _basic_helpers import (
     is_url,
     list_versions,
     ok,
+    path_hint,
     peek_token,
     resolve_path,
     restore_version,
@@ -46,7 +47,9 @@ def run_fs_write(ops: list[dict], dry_run: bool = False) -> dict:
     try:
         return _fs_write(ops, dry_run)
     except ValueError as e:
-        return _error("fs_write", str(e), "Ensure all paths are within your home directory.")
+        return _error(
+            "fs_write", str(e), path_hint(e, "Ensure all paths are within your home directory.")
+        )
     except Exception as e:
         return _error(
             "fs_write", str(e), "Check op parameters and retry with a single op to isolate."
@@ -479,7 +482,7 @@ def _dispatch_op(op_dict: dict, dry_run: bool) -> dict:
                 result["token_estimate"] = len(str(result)) // 4
         return result
     except ValueError as e:
-        return _error(name, str(e), "Ensure path is within your home directory.")
+        return _error(name, str(e), path_hint(e, "Ensure path is within your home directory."))
     except PermissionError as e:
         return _error(name, f"Permission denied: {e}", "Check file/directory permissions.")
     except FileNotFoundError as e:

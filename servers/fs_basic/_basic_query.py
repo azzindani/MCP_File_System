@@ -11,6 +11,7 @@ from pathlib import Path
 
 from _basic_helpers import (
     _error,
+    default_dir,
     get_content_backend,
     get_max_context_lines,
     get_max_grep_hits,
@@ -19,6 +20,7 @@ from _basic_helpers import (
     get_name_backend,
     info,
     ok,
+    path_hint,
     resolve_path,
     warn,
 )
@@ -59,7 +61,7 @@ def run_fs_query(
         return _error(
             "fs_query",
             str(e),
-            "Ensure path is absolute and within your home directory.",
+            path_hint(e, "Ensure path is absolute and within your home directory."),
         )
     except PermissionError as e:
         return _error(
@@ -126,7 +128,7 @@ def _fs_query(
     context_lines = max(0, min(context_lines, get_max_context_lines()))
 
     # --- resolve root ---
-    root_str = path or str(Path.home())
+    root_str = path or str(default_dir())
     root = resolve_path(root_str)
     if not root.exists():
         return _error(

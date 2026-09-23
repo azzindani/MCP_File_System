@@ -22,12 +22,16 @@ from shared.confirm_store import (  # noqa: E402
     validate_token,
 )
 from shared.file_utils import (  # noqa: E402
+    PathOutsideRootError,
+    anchor,
     atomic_write,
     atomic_write_bytes,
     attach_public_url,
+    default_dir,
     fetch_url,
     get_default_output_dir,
     is_url,
+    path_hint,
     resolve_path,
     size_kb,
 )
@@ -94,6 +98,10 @@ __all__ = [
     "get_default_output_dir",
     "is_url",
     "resolve_path",
+    "PathOutsideRootError",
+    "anchor",
+    "default_dir",
+    "path_hint",
     "ALLOWED_OPS",
     "validate_ops",
     "get_content_backend",

@@ -27,24 +27,98 @@ __all__ = [
     "get_inbox_dir",
     "get_output_dir",
     "is_url",
+    "PathOutsideRootError",
+    "anchor",
+    "default_dir",
+    "path_hint",
+    "paths_confined",
     "public_url_for",
     "resolve_path",
+    "served_roots",
     "url_fetch_enabled",
 ]
+
+
+class PathOutsideRootError(ValueError):
+    """A confined server was handed a path outside every folder it serves.
+
+    A ValueError because every tool here answers ValueError first; a
+    PermissionError would be swallowed by the walkers' `except PermissionError`
+    and read as an empty folder.
+    """
+
+    hint = (
+        "Pass a path inside the data folder (a relative path is read from it). "
+        "The server's operator can add folders with MCP_ALLOWED_ROOTS."
+    )
+
+
+def paths_confined() -> bool:
+    """True when paths are held to the served folders (every HTTP deployment).
+
+    A local install works anywhere, by design: it is the caller's own machine.
+    A remote caller shares no filesystem with this server, and unconfined any
+    authenticated caller could read, overwrite or delete any file the container
+    could -- /proc/self/environ holds the API keys.
+    """
+    return os.environ.get("MCP_CONFINE_PATHS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def served_roots() -> list[Path]:
+    """The folders a confined server serves: MCP_OUTPUT_DIR, MCP_DATA_ROOT, MCP_ALLOWED_ROOTS."""
+    raws = [os.environ.get("MCP_OUTPUT_DIR", ""), os.environ.get("MCP_DATA_ROOT", "")]
+    raws += os.environ.get("MCP_ALLOWED_ROOTS", "").split(os.pathsep)
+    return [Path(r).expanduser().resolve() for r in raws if r.strip()]
+
+
+def default_dir() -> Path:
+    """Where a relative path, or no path at all, points: home locally, the data folder when confined."""
+    if paths_confined():
+        for name in ("MCP_DATA_ROOT", "MCP_OUTPUT_DIR"):
+            if os.environ.get(name, "").strip():
+                return Path(os.environ[name]).expanduser()
+    return Path.home()
+
+
+def anchor(file_path: str) -> Path:
+    """`file_path` with ~ expanded and a relative path placed under default_dir(), unresolved."""
+    raw = Path(file_path).expanduser()
+    return raw if raw.is_absolute() else default_dir() / raw
+
+
+def path_hint(exc: Exception, fallback: str) -> str:
+    """The recovery for this ValueError: the refusal's own hint, else the caller's."""
+    return exc.hint if isinstance(exc, PathOutsideRootError) else fallback
+
+
+def _confine(path: Path, file_path: str) -> None:
+    """Refuse `path` (already resolved) when confined and outside every served folder.
+
+    Judged after symlinks resolve and before existence is checked, so the
+    refusal says nothing about what exists out there.
+    """
+    if not paths_confined():
+        return
+    roots = served_roots()
+    if any(path == root or path.is_relative_to(root) for root in roots):
+        return
+    shown = ", ".join(str(r) for r in roots[:3]) or "none configured"
+    raise PathOutsideRootError(f"'{file_path}' is outside the folders this server can use ({shown}).")
 
 
 def resolve_path(file_path: str, must_exist: bool = False) -> Path:
     """Resolve and normalise a path. Rejects UNC network paths on Windows.
 
-    Handles ~ expansion and relative paths (resolved from home).
-    Applies Windows long-path prefix for paths > 200 chars.
-    No directory restriction — the tool is designed to work anywhere.
+    Handles ~ expansion and relative paths (resolved from home, or from the
+    data folder when confined). Applies Windows long-path prefix for paths
+    > 200 chars. No directory restriction on a local install — the tool is
+    designed to work anywhere. With MCP_CONFINE_PATHS on, the resolved path
+    must lie inside a served folder (see served_roots).
     """
-    home = Path.home()
-    raw = Path(file_path).expanduser()
-    if not raw.is_absolute():
-        raw = home / raw
-    path = raw.resolve()
+    if "\x00" in file_path:
+        raise ValueError("A path cannot contain a null byte.")
+    path = anchor(file_path).resolve()
+    _confine(path, file_path)
 
     # Reject UNC network paths — this server is local-only
     if sys.platform == "win32" and str(path).startswith("\\\\"):

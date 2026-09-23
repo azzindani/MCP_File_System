@@ -6,10 +6,13 @@ from pathlib import Path
 
 from _basic_helpers import (
     _error,
+    anchor,
+    default_dir,
     get_max_usage_walk,
     get_platform,
     list_versions,
     ok,
+    path_hint,
     resolve_path,
 )
 
@@ -22,7 +25,9 @@ def run_fs_manage(action: str, path: str = "") -> dict:
     try:
         return _fs_manage(action, path)
     except ValueError as e:
-        return _error("fs_manage", str(e), "Ensure path is within your home directory.")
+        return _error(
+            "fs_manage", str(e), path_hint(e, "Ensure path is within your home directory.")
+        )
     except PermissionError as e:
         return _error(
             "fs_manage", f"Permission denied: {e}", "Check permissions or choose a path you own."
@@ -108,7 +113,7 @@ def _walk_usage(target: Path, budget: int) -> tuple[int, int, bool]:
 
 
 def _action_disk_usage(path: str) -> dict:
-    target = resolve_path(path or str(Path.home()))
+    target = resolve_path(path or str(default_dir()))
     # The other three actions check this and report the path; disk_usage did
     # not, and handed back whatever the OS said. On Linux that string happens
     # to contain the path -- "[Errno 2] No such file or directory: '/tmp/...'"
@@ -229,9 +234,17 @@ def _action_symlink_info(path: str) -> dict:
         )
 
     # Build raw (unresolved) path for accurate is_symlink check
-    raw = Path(path).expanduser()
-    if not raw.is_absolute():
-        raw = Path.home() / raw
+    raw = anchor(path)
+
+    # Validate before looking: resolve_path follows the link, so a link that
+    # leads outside a confined server's folders is refused, and a refusal says
+    # nothing about whether something exists out there.
+    try:
+        resolve_path(path)
+    except ValueError as e:
+        return _error(
+            "fs_manage", str(e), path_hint(e, "Ensure path is within your home directory.")
+        )
 
     if not raw.exists() and not raw.is_symlink():
         # As in fs_read: report the path that was looked for, not its last
@@ -242,14 +255,6 @@ def _action_symlink_info(path: str) -> dict:
             "Use fs_query to locate the file first.",
         )
 
-    # Validate within home (resolve_path resolves symlink for security check)
-    try:
-        resolve_path(path)
-    except ValueError as e:
-        return _error("fs_manage", str(e), "Ensure path is within your home directory.")
-    except FileNotFoundError:
-        pass  # OK for broken symlinks — raw check above already passed
-
     is_symlink = raw.is_symlink()
     symlink_target: str | None = None
     is_broken = False
@@ -259,7 +264,7 @@ def _action_symlink_info(path: str) -> dict:
             symlink_target = str(raw.readlink())
         except OSError, AttributeError:
             try:
-                symlink_target = str(Path(path).resolve())
+                symlink_target = str(raw.resolve())
             except Exception:
                 symlink_target = None
         is_broken = not raw.exists()

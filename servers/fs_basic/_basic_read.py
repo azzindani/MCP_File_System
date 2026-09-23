@@ -7,12 +7,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _basic_helpers import (
+    PathOutsideRootError,
     _error,
     get_max_depth,
     get_max_lines,
     get_max_tree_entries,
     info,
     ok,
+    path_hint,
     resolve_path,
 )
 
@@ -38,7 +40,11 @@ def run_fs_read(
     try:
         return _fs_read(path, mode, start_line, end_line, depth, compare_to, changed_since)
     except ValueError as e:
-        return _error("fs_read", str(e), "Ensure path is absolute and within your home directory.")
+        return _error(
+            "fs_read",
+            str(e),
+            path_hint(e, "Ensure path is absolute and within your home directory."),
+        )
     except FileNotFoundError:
         # The BASENAME was reported for a path the caller gave in full, so
         # "Path does not exist: ads.csv" came back from an absolute
@@ -377,6 +383,8 @@ def _read_diff(path: Path, compare_to: str) -> dict:
         cmp_resolved = resolve_path(compare_to)
         if cmp_resolved.exists():
             cmp_path = cmp_resolved
+    except PathOutsideRootError:
+        raise  # a path, and a refused one -- not a snapshot timestamp to look up instead
     except ValueError:
         pass
 

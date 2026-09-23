@@ -31,10 +31,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _basic_helpers import (
+    PathOutsideRootError,
     _error,
+    default_dir,
     get_max_results,
     info,
     ok,
+    path_hint,
     read_receipt_log,
     resolve_path,
 )
@@ -68,7 +71,9 @@ def run_fs_index(
     try:
         return _fs_index(action, path, pattern, max_results)
     except ValueError as e:
-        return _error("fs_index", str(e), "Ensure path is within your home directory.")
+        return _error(
+            "fs_index", str(e), path_hint(e, "Ensure path is within your home directory.")
+        )
     except Exception as e:
         return _error("fs_index", str(e), "Use fs_index with action=stats to check index health.")
 
@@ -147,7 +152,7 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def _action_build(path: str) -> dict:
-    root = resolve_path(path or str(Path.home()), must_exist=True)
+    root = resolve_path(path or str(default_dir()), must_exist=True)
     if not root.is_dir():
         return _error(
             "fs_index",
@@ -266,7 +271,9 @@ def _action_list(path: str, max_results: int) -> dict:
         try:
             root_filter = str(resolve_path(path))
         except ValueError as e:
-            return _error("fs_index", str(e), "Ensure path is within your home directory.")
+            return _error(
+                "fs_index", str(e), path_hint(e, "Ensure path is within your home directory.")
+            )
 
     conn = _get_conn()
     try:
@@ -340,6 +347,10 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         try:
             root_path = resolve_path(path)
             root_filter = str(root_path)
+        except PathOutsideRootError:
+            # Falling through here searched the WHOLE index for a path the
+            # server had just refused, and answered success.
+            raise
         except ValueError:
             pass
 
