@@ -6,7 +6,7 @@ A self-hosted MCP server that gives local LLMs structured access to file managem
 
 ## Features
 
-- **7 tools** in a single server: `fs_query`, `fs_read`, `fs_write`, `fs_index`, `fs_manage`, `fs_archive`, `list_fs_ops`
+- **6 tools** in a single server: `fs_query`, `fs_read`, `fs_write`, `fs_index`, `fs_manage`, `fs_archive` (`fs_write(ops=[])` answers the op grammar; `list_fs_ops`, which did that, is unlisted and still answers)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical file edits
 - **Automatic version control** — every destructive write is snapshotted and fully restorable
 - **Operation receipt logging** — full audit trail of all modifications per file
@@ -81,7 +81,7 @@ The first launch clones the repo and installs dependencies (~1-3 minutes). Subse
 ```
 
 4. Wait for the blue dot next to the server
-5. Start chatting — the model will see all 7 tools
+5. Start chatting — the model will see all 6 tools
 
 ### macOS / Linux
 
@@ -255,23 +255,27 @@ contradicting the extension: a value that is not a format cannot contradict
 one, and the "rename the archive" the contradiction message offers would not
 have been a way out of it.
 
-### list_fs_ops — THE `fs_write` GRAMMAR
+### fs_write(ops=[]) — THE `fs_write` GRAMMAR
 
 `fs_write` takes `ops=[{op, …}]`, and the fields each op needs live inside a
 `list[dict]` that the JSON schema cannot describe. That left one way to learn
 the grammar: send a call and read the refusal. `copy` wants `src` and `dst`,
 not `source` and `destination`, and nothing said so.
 
-| Argument | Description |
-|---|---|
-| `op` | The op to describe — `create_dir`, `copy`, `move`, `write`, `append`, `delete`, … |
-| *(omitted)* | Every op, each with its required fields, optional fields, accepted aliases, and a worked example |
+Send `ops=[]` and `fs_write` answers every op, each with its required fields,
+optional fields, accepted aliases, and a worked example. Nothing is written, and
+the answer says so.
+
+This used to be a tool of its own, `list_fs_ops`, which also takes `op` to
+describe one op (`list_fs_ops(op="copy")`). It is no longer in `tools/list` --
+one name fewer for a model to read on every turn -- but still answers, and its
+answer names `fs_write(ops=[])`.
 
 ```
 What can fs_write actually do?
 ```
 
-Read-only, and its answer is rendered from the same table `fs_write` validates
+It writes nothing, and its answer is rendered from the same table `fs_write` validates
 against, so the two cannot drift apart.
 
 ---
@@ -469,8 +473,9 @@ requires a bearer token even while it's publicly reachable.
 
 Run in CI against a container (the `e2e` job) and by hand against the
 deployment. `pytest` itself stays offline. Exercises a running HTTP endpoint: auth enforcement plus a real
-handwritten-prompt-style call for **all 7 tools** (`fs_query`, `fs_read`,
-`fs_write`, `fs_index`, `fs_manage`, `fs_archive`, `list_fs_ops`), against real seeded files
+handwritten-prompt-style call for **all 6 listed tools** (`fs_query`, `fs_read`,
+`fs_write`, `fs_index`, `fs_manage`, `fs_archive`) plus `fs_write(ops=[])` and the
+unlisted `list_fs_ops`, against real seeded files
 in the container. This is what caught the root-owned `/home/app` bug blocking
 `fs_index`'s default index path.
 
@@ -510,7 +515,7 @@ mcp-filesystem/
 │   ├── patch_validator.py       ← validate op arrays before execution
 │   └── confirm_store.py         ← in-memory deletion token store (5-min expiry)
 ├── servers/
-│   └── fs_basic/                ← single Tier 1 server (7 tools)
+│   └── fs_basic/                ← single Tier 1 server (6 listed tools + list_fs_ops unlisted)
 │       ├── server.py            ← thin MCP wrapper; each tool is one engine call
 │       ├── engine.py            ← thin router; zero MCP imports
 │       ├── _basic_helpers.py    ← shared imports, constants, _error helper

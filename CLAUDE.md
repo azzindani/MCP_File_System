@@ -198,6 +198,11 @@ Additional tools (within Tier 1 budget of 6–8):
 
 Final tool count: **6 tools** (within Tier 1 target).
 
+`list_fs_ops` (the `fs_write` op grammar) is registered but unlisted
+(shared/retired.py): `fs_write(ops=[])` answers the same catalogue and writes
+nothing. The old name still answers, with `retired` naming `fs_write(ops=[])`.
+A grammar a tool needs goes in that tool's empty call, not in a new tool name.
+
 ### Surgical Read Protocol (STANDARDS.md §10)
 
 - `fs_query`: returns paths only by default. In `grep_mode`, returns matching
