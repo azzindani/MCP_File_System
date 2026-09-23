@@ -92,6 +92,13 @@ def path_hint(exc: Exception, fallback: str) -> str:
     return exc.hint if isinstance(exc, PathOutsideRootError) else fallback
 
 
+# How this server takes a file's bytes: fs_write's write_file, which is text by
+# default and binary with content_encoding="base64".
+_FS_INLINE_ROUTE = (
+    "write its contents with fs_write: a write_file op, with content_encoding='base64' for a binary file"
+)
+
+
 def _confine(path: Path, file_path: str) -> None:
     """Refuse `path` (already resolved) when confined and outside every served folder.
 
@@ -104,9 +111,11 @@ def _confine(path: Path, file_path: str) -> None:
     if any(path == root or path.is_relative_to(root) for root in roots):
         return
     shown = ", ".join(str(r) for r in roots[:3]) or "none configured"
-    elsewhere = client_side_refusal(file_path)
+    elsewhere = client_side_refusal(file_path, _FS_INLINE_ROUTE)
     if elsewhere:
-        raise PathOutsideRootError(elsewhere)
+        refusal = PathOutsideRootError(elsewhere)
+        refusal.hint = "The file is on the caller's side; bring it here by one of the routes named."
+        raise refusal
     raise PathOutsideRootError(f"'{file_path}' is outside the folders this server can use ({shown}).")
 
 
