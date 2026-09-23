@@ -114,9 +114,12 @@ class TestTheAnswerSaysWhatItFilteredOn:
         r = engine.fs_index(action="query", pattern="*", path=str(inside))
         assert r["root"] == str(inside), r.get("root")
 
-    def test_an_unfiltered_query_reports_home(self, indexed_tree, home):
+    def test_an_unfiltered_query_says_it_read_the_whole_index(self, indexed_tree, home):
+        # It searched the whole index, not home: on a deployed server home is
+        # /home/app, not a served folder, and naming it told the caller the
+        # search had looked somewhere it had not.
         r = engine.fs_index(action="query", pattern="*")
-        assert r["root"] == str(home), r.get("root")
+        assert r["root"] == "(the whole index)" and r["root"] != str(home), r.get("root")
 
     def test_a_matching_query_carries_no_hint(self, indexed_tree):
         inside, _ = indexed_tree
