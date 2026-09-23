@@ -157,3 +157,29 @@ class TestLocal:
     def test_a_relative_path_is_still_read_from_home(self, tmp_home, monkeypatch, outside_file):
         monkeypatch.delenv("MCP_CONFINE_PATHS", raising=False)
         assert resolve_path("private.txt") == outside_file.resolve()
+
+
+class TestTheExamplesWorkWhereTheServerIsDeployed:
+    """Every example list_fs_ops shows names a path a confined server accepts.
+
+    15 of 17 examples used `~/...`, which every HTTP deployment refuses: a
+    caller copying the example verbatim got "'~/notes.txt' is outside the
+    folders this server can use". A relative path means the same file locally
+    (from the working folder) and on a server (from the data folder).
+    """
+
+    def test_every_example_path_resolves_inside_the_data_folder(self, served):
+        from shared.patch_validator import catalogue
+
+        checked = 0
+        for entry in catalogue():
+            example = entry.get("example", {})
+            for key in ("path", "src", "dst"):
+                if key in example:
+                    assert not str(example[key]).startswith("~"), (entry["op"], example)
+                    assert resolve_path(example[key]).is_relative_to(served.resolve()), (
+                        entry["op"],
+                        example,
+                    )
+                    checked += 1
+        assert checked >= 15
