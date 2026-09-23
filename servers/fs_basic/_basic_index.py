@@ -110,6 +110,12 @@ def _fs_index(action: str, path: str, pattern: str, max_results: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# With no `path`, list and query read the whole index. They reported the root
+# as Path.home() -- /home/app on a deployed server, which is not even a served
+# folder -- so a caller was told the search had looked somewhere it had not.
+WHOLE_INDEX = "(the whole index)"
+
+
 def _subtree_like(root: Path) -> tuple[str, str]:
     """A LIKE pattern matching everything under `root`, and its escape char.
 
@@ -310,7 +316,7 @@ def _action_list(path: str, max_results: int) -> dict:
         "success": True,
         "op": "fs_index",
         "action": "list",
-        "root": root_filter or str(Path.home()),
+        "root": root_filter or WHOLE_INDEX,
         "entries": entries,
         **counted(len(entries), total),
         "progress": [ok(f"Listed {len(entries)} of {total} indexed entries")],
@@ -390,6 +396,25 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         else:
             covered_row = conn.execute(f"SELECT COUNT(*) FROM {_FILES_TABLE}").fetchone()
         indexed_under_root = covered_row[0] if covered_row else 0
+
+        # `pattern` matches whole names, so a bare word finds only a file named
+        # exactly that. How many a *word* pattern would find is what tells the
+        # caller the pattern -- not a stale index -- is why nothing came back.
+        contains_count = 0
+        if not rows and not any(ch in pattern for ch in "*?"):
+            contains = f"%{like_pattern}%"
+            if root_filter:
+                like, esc = _subtree_like(Path(root_filter))
+                row = conn.execute(
+                    f"SELECT COUNT(*) FROM {_FILES_TABLE} "
+                    f"WHERE name LIKE ? AND (path = ? OR path LIKE ? ESCAPE ?)",
+                    (contains, root_filter, like, esc),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    f"SELECT COUNT(*) FROM {_FILES_TABLE} WHERE name LIKE ?", (contains,)
+                ).fetchone()
+            contains_count = row[0] if row else 0
     finally:
         conn.close()
 
@@ -421,7 +446,7 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         "pattern": pattern,
         # Named for the same reason action=list names it: a filtered answer that
         # does not say what it filtered on cannot be read.
-        "root": root_filter or str(Path.home()),
+        "root": root_filter or WHOLE_INDEX,
         "matches": match_list,
         # `indexed_under_root` counts what the index holds under this root, not
         # what the pattern matched: it is not the denominator for these rows and
@@ -439,7 +464,7 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
         )
     elif not match_list:
         built = meta_row[0] if meta_row else "never"
-        where = root_filter or str(Path.home())
+        where = root_filter or WHOLE_INDEX
         if indexed_under_root == 0:
             # The whole point of the fix: this is not "no such file", it is
             # "this subtree was never indexed", and only action=build fixes it.
@@ -447,6 +472,11 @@ def _action_query(pattern: str, path: str, max_results: int) -> dict:
                 f"Nothing under {where} is in the index, so this is not the same as no such file. "
                 f"Run fs_index action=build path={where} to index it, or fs_query to search the "
                 f"disk directly. Index last built: {built}."
+            )
+        elif contains_count:
+            result["hint"] = (
+                f"'{pattern}' is matched against whole file names, and no name is exactly that. "
+                f"{contains_count} indexed name(s) contain it: query pattern='*{pattern}*'."
             )
         else:
             result["hint"] = (

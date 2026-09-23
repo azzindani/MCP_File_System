@@ -127,6 +127,10 @@ _FIELD_ALIASES: dict[str, dict[str, str]] = {
     "move": {"path": "src"},
     "copy": {"path": "src"},
     "rename": {"new_name": "name", "dst": "name"},
+    # delete_request answers with `confirmation_token`; passing that value back
+    # under the name it came with was refused as an unknown field.
+    "delete_confirm": {"confirmation_token": "token"},
+    "delete_tree_confirm": {"confirmation_token": "token"},
 }
 
 # Only `path` was ever type-checked, so every other field reached its handler as
