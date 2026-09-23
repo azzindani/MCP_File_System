@@ -205,3 +205,12 @@ class TestAPathOnTheCallersSideIsNamedAsOne:
     def test_any_other_outside_path_keeps_the_plain_refusal(self, served):
         with pytest.raises(PathOutsideRootError, match="outside the folders"):
             resolve_path("/etc/hostname")
+
+
+class TestTheRefusalNamesThisServersInlineRoute:
+    def test_a_callers_side_path_is_pointed_at_write_file(self, served):
+        with pytest.raises(PathOutsideRootError) as caught:
+            resolve_path("/mnt/user-data/uploads/notes.txt")
+        assert "write_file" in str(caught.value)
+        assert "data:" not in str(caught.value)
+        assert "caller's side" in caught.value.hint
