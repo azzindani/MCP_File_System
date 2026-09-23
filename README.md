@@ -381,6 +381,11 @@ are unset by default:
   `MCP_FETCH_ALLOW_PRIVATE=1`. URL support is a distinct op rather than
   something `path` accepts everywhere, because in every other op `path` is a
   *destination* — silently downloading one would be nonsense.
+  A Google Drive, Docs, Dropbox, GitHub or GitLab share link is read as the
+  file it points to, and a web page served where a file was asked for (a link
+  that is not public answers with a sign-in page) is refused, not parsed. A path
+  from the caller's side -- a chat's sandbox such as `/mnt/user-data/…` -- is
+  refused by name in every op, with the ways to bring the file here.
 
 ```json
 [{"op": "download", "url": "https://example.com/sales.csv", "path": "/files/sales.csv"}]

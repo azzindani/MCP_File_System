@@ -9,6 +9,7 @@ from pathlib import Path
 from shared.exchange import (
     apply_default_mode,
     attach_public_url,
+    client_side_refusal,
     fetch_url,
     get_inbox_dir,
     get_output_dir,
@@ -103,6 +104,9 @@ def _confine(path: Path, file_path: str) -> None:
     if any(path == root or path.is_relative_to(root) for root in roots):
         return
     shown = ", ".join(str(r) for r in roots[:3]) or "none configured"
+    elsewhere = client_side_refusal(file_path)
+    if elsewhere:
+        raise PathOutsideRootError(elsewhere)
     raise PathOutsideRootError(f"'{file_path}' is outside the folders this server can use ({shown}).")
 
 
