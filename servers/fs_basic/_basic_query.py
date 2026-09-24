@@ -26,6 +26,7 @@ from _basic_helpers import (
 )
 
 from shared.counts import counted
+from shared.regex_guard import Guard, PatternTimeout
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -56,6 +57,12 @@ def run_fs_query(
             follow_symlinks,
             max_results,
             regex,
+        )
+    except PatternTimeout as e:
+        return _error(
+            "fs_query",
+            str(e),
+            "Search for it as literal text (drop regex=True), or rewrite the pattern without nested repeats.",
         )
     except ValueError as e:
         return _error(
@@ -209,9 +216,16 @@ def _fs_query(
                 scan_complete,
                 scan_limit,
             )
+        elif is_regex:
+            # Matched in a worker the server can stop (shared/regex_guard): a
+            # pattern with nested repeats hung this search on a 29-byte file.
+            with Guard(content) as guard:
+                name_matches = [
+                    p for p in name_matches if p.is_file() and _file_contains(p, content, guard)
+                ]
         else:
             name_matches = [
-                p for p in name_matches if p.is_file() and _file_contains(p, content, is_regex)
+                p for p in name_matches if p.is_file() and _file_contains(p, content, None)
             ]
 
     # --- truncate ---
@@ -368,25 +382,28 @@ def _looks_like_regex(pattern: str) -> bool:
     return bool(_METACHARACTERS.search(pattern))
 
 
-def _file_contains(file_path: Path, pattern: str, is_regex: bool) -> bool:
+def _file_contains(file_path: Path, pattern: str, guard: Guard | None) -> bool:
+    """Whether the file holds `pattern`: through `guard` for a regex, literally without one."""
     try:
         text = file_path.read_text(encoding="utf-8", errors="replace")
-        if is_regex:
-            return bool(re.search(pattern, text))
-        return pattern in text
     except Exception:
         return False
+    return guard.search(text) if guard is not None else pattern in text
 
 
-def _python_grep(file_path: Path, pattern: str, context_lines: int, is_regex: bool) -> list[dict]:
+def _python_grep(
+    file_path: Path, pattern: str, context_lines: int, guard: Guard | None
+) -> list[dict]:
     try:
         text = file_path.read_text(encoding="utf-8", errors="replace")
-        lines = text.splitlines()
-        compiled = re.compile(pattern) if is_regex else None
+    except Exception:
+        return []
+    lines = text.splitlines()
+    matches = guard.found(lines) if guard is not None else [pattern in line for line in lines]
+    try:
         hits: list[dict] = []
         for i, line in enumerate(lines):
-            matched = bool(compiled.search(line)) if compiled else (pattern in line)
-            if matched:
+            if matches[i]:
                 start = max(0, i - context_lines)
                 end = min(len(lines), i + context_lines + 1)
                 hits.append(
@@ -514,36 +531,41 @@ def _build_grep_response(
         matches_out = []
         truncated = False
         files_matched, files_exact = 0, True
-        for file_path in name_matches:
-            if not file_path.is_file():
-                continue
-            hits = _python_grep(file_path, content, context_lines, is_regex)
-            if hits:
-                entry = {"path": str(file_path), "hits": hits}
-                if include_meta:
-                    try:
-                        entry.update(_with_meta(file_path))
-                    except Exception:
-                        pass
-                matches_out.append(entry)
-                # Collect one past the cap, then report on what was actually
-                # found. The old form stopped *at* the cap and set the flag from
-                # `idx < len(name_matches) - 1` -- whether any unscanned file
-                # remained, not whether any further file matched. With exactly
-                # max_results matches among a larger set of candidates that is a
-                # false positive, and which way it fell depended on directory
-                # iteration order: the same five files with five receipts beside
-                # them reported truncated in CI and not in production, off the
-                # same commit. The name-pattern branch above already compares
-                # counts this way.
-                if len(matches_out) > effective_max:
-                    truncated = True
-                    # Stopped one past the cap, so all that is known about the
-                    # real number of matching files is that it is at least this.
-                    files_matched, files_exact = len(matches_out), False
-                    matches_out = matches_out[:effective_max]
-                    break
-                files_matched = len(matches_out)
+        guard = Guard(content) if is_regex else None
+        try:
+            for file_path in name_matches:
+                if not file_path.is_file():
+                    continue
+                hits = _python_grep(file_path, content, context_lines, guard)
+                if hits:
+                    entry = {"path": str(file_path), "hits": hits}
+                    if include_meta:
+                        try:
+                            entry.update(_with_meta(file_path))
+                        except Exception:
+                            pass
+                    matches_out.append(entry)
+                    # Collect one past the cap, then report on what was actually
+                    # found. The old form stopped *at* the cap and set the flag from
+                    # `idx < len(name_matches) - 1` -- whether any unscanned file
+                    # remained, not whether any further file matched. With exactly
+                    # max_results matches among a larger set of candidates that is a
+                    # false positive, and which way it fell depended on directory
+                    # iteration order: the same five files with five receipts beside
+                    # them reported truncated in CI and not in production, off the
+                    # same commit. The name-pattern branch above already compares
+                    # counts this way.
+                    if len(matches_out) > effective_max:
+                        truncated = True
+                        # Stopped one past the cap, so all that is known about the
+                        # real number of matching files is that it is at least this.
+                        files_matched, files_exact = len(matches_out), False
+                        matches_out = matches_out[:effective_max]
+                        break
+                    files_matched = len(matches_out)
+        finally:
+            if guard is not None:
+                guard.close()
 
     # The file list was bounded above; the lines inside each file were not. A
     # term appearing on 15,101 lines of two CSVs produced a 5.5 MB response that

@@ -38,6 +38,8 @@ from _basic_helpers import (
     warn,
 )
 
+from shared.regex_guard import Guard, PatternTimeout
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -916,11 +918,20 @@ def _op_replace_text(op_dict: dict, dry_run: bool) -> dict:
         return _error("replace_text", str(e), "Check file permissions.")
 
     if use_regex:
+        # Matched in a worker the server can stop (shared/regex_guard): a
+        # pattern with nested repeats hung this op on a 29-byte file.
         try:
-            new_content, n = re.subn(find, replace, content, count=count)
+            with Guard(find) as guard:
+                new_content, n = guard.subn(replace, content, count)
         except re.error as e:
             return _error(
                 "replace_text", f"Invalid regex: {e}", "Fix the regex in the 'find' parameter."
+            )
+        except PatternTimeout as e:
+            return _error(
+                "replace_text",
+                str(e),
+                "Pass regex=false to replace the text literally, or rewrite the pattern without nested repeats.",
             )
     else:
         occurrences = content.count(find)
