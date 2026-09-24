@@ -359,6 +359,7 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
+| `MCP_REGEX_SECONDS` | `10` (`5` constrained) | Matching time one call's regular expression may use; a pattern still running is stopped and refused by name |
 | `MCP_OUTPUT_DIR` | `~/Downloads` | Shared directory other services and the outside world can also see |
 | `MCP_PUBLIC_BASE_URL` | _(unset)_ | Public URL serving `MCP_OUTPUT_DIR`; adds `public_url` to write results |
 | `MCP_FETCH_URLS` | `0` | `1` enables the `download` op in `fs_write` |
